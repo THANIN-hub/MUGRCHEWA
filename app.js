@@ -260,19 +260,28 @@ function renderMemberDashboard() {
     renderMemberHistory();
 }
 
+let promoSlideIndex = 0;
+let promoSlideTimer = null;
+
 function renderMemberPromotions() {
     const container = document.getElementById('member-promo-section');
     if (!container) return;
     const activePromos = (db.promotions || []).filter(p => p.is_active);
 
+    if (promoSlideTimer) clearInterval(promoSlideTimer);
+
     if (!activePromos.length) {
         container.innerHTML = '';
+        container.style.display = 'none';
         return;
     }
 
-    container.innerHTML = activePromos.map(p => `
+    container.style.display = 'block';
+    promoSlideIndex = 0;
+
+    const slidesHTML = activePromos.map(p => `
         <div class="promo-banner-card">
-            <img src="${p.image}" alt="${p.title}" onerror="this.src='https://via.placeholder.com/600x200?text=Promotion'">
+            <img src="${p.image}" alt="${p.title}" onerror="this.src='https://via.placeholder.com/800x250?text=Promotion'">
             <div class="promo-overlay">
                 <span class="promo-tag"><i class="fa-solid fa-fire"></i> ${p.badge}</span>
                 <h4>${p.title}</h4>
@@ -280,6 +289,56 @@ function renderMemberPromotions() {
             </div>
         </div>
     `).join('');
+
+    const controlsHTML = activePromos.length > 1 ? `
+        <button class="promo-nav-btn promo-prev" onclick="movePromoSlide(-1)" title="ก่อนหน้า">
+            <i class="fa-solid fa-chevron-left"></i>
+        </button>
+        <button class="promo-nav-btn promo-next" onclick="movePromoSlide(1)" title="ถัดไป">
+            <i class="fa-solid fa-chevron-right"></i>
+        </button>
+        <div class="promo-dots">
+            ${activePromos.map((_, idx) => `
+                <button class="promo-dot ${idx === 0 ? 'active' : ''}" onclick="goToPromoSlide(${idx})"></button>
+            `).join('')}
+        </div>
+    ` : '';
+
+    container.innerHTML = `
+        <div class="promo-track" id="promo-track">${slidesHTML}</div>
+        ${controlsHTML}
+    `;
+
+    if (activePromos.length > 1) {
+        promoSlideTimer = setInterval(() => {
+            movePromoSlide(1);
+        }, 4000); // เลื่อนอัตโนมัติทุกๆ 4 วินาที
+    }
+}
+
+function movePromoSlide(step) {
+    const track = document.getElementById('promo-track');
+    if (!track) return;
+    const total = track.children.length;
+    if (total <= 1) return;
+
+    promoSlideIndex = (promoSlideIndex + step + total) % total;
+    updatePromoSlideUI();
+}
+
+function goToPromoSlide(index) {
+    promoSlideIndex = index;
+    updatePromoSlideUI();
+}
+
+function updatePromoSlideUI() {
+    const track = document.getElementById('promo-track');
+    if (!track) return;
+    track.style.transform = `translateX(-${promoSlideIndex * 100}%)`;
+
+    document.querySelectorAll('.promo-dot').forEach((dot, idx) => {
+        dot.classList.toggle('active', idx === promoSlideIndex);
+    });
 }
 
 function renderMemberRewards() {

@@ -768,23 +768,29 @@ body {
     }
 }
 /* ==========================================
-   แบนเนอร์โปรโมชั่น & ปุ่มลัด POS
+   สไลด์แบนเนอร์โปรโมชั่นเลื่อนอัตโนมัติ (Carousel)
    ========================================== */
 .promo-carousel-wrapper {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 16px;
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
     margin-bottom: 24px;
+    box-shadow: var(--shadow-md);
+    background: var(--primary-blue);
+}
+
+.promo-track {
+    display: flex;
+    transition: transform 0.55s cubic-bezier(0.25, 1, 0.5, 1);
+    width: 100%;
 }
 
 .promo-banner-card {
+    min-width: 100%;
     position: relative;
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    height: 170px;
-    box-shadow: var(--shadow-md);
-    background: var(--primary-blue);
+    height: 190px;
     color: white;
+    flex-shrink: 0;
 }
 
 .promo-banner-card img {
@@ -792,18 +798,13 @@ body {
     height: 100%;
     object-fit: cover;
     opacity: 0.55;
-    transition: transform 0.3s ease;
-}
-
-.promo-banner-card:hover img {
-    transform: scale(1.04);
 }
 
 .promo-overlay {
     position: absolute;
     inset: 0;
-    padding: 20px;
-    background: linear-gradient(90deg, rgba(23, 37, 84, 0.92) 0%, rgba(30, 58, 138, 0.4) 100%);
+    padding: 24px 48px;
+    background: linear-gradient(90deg, rgba(23, 37, 84, 0.92) 0%, rgba(30, 58, 138, 0.35) 100%);
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -821,7 +822,7 @@ body {
 }
 
 .promo-overlay h4 {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
     margin-bottom: 4px;
     color: #FFFFFF;
@@ -830,6 +831,58 @@ body {
 .promo-overlay p {
     font-size: 13px;
     opacity: 0.9;
+}
+
+.promo-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.22);
+    color: white;
+    border: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.promo-nav-btn:hover {
+    background: rgba(255, 255, 255, 0.45);
+}
+
+.promo-prev { left: 10px; }
+.promo-next { right: 10px; }
+
+.promo-dots {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    z-index: 2;
+}
+
+.promo-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.45);
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    transition: all 0.3s;
+}
+
+.promo-dot.active {
+    background: var(--accent-yellow);
+    width: 20px;
+    border-radius: 6px;
 }
 
 .quick-price-btns {
