@@ -312,7 +312,7 @@ function renderMemberPromotions() {
     if (activePromos.length > 1) {
         promoSlideTimer = setInterval(() => {
             movePromoSlide(1);
-        }, 4000); // เลื่อนอัตโนมัติทุกๆ 4 วินาที
+        }, 4000);
     }
 }
 
@@ -655,6 +655,81 @@ async function updateRedemptionStatus(redemptionId, newStatus) {
     renderAdminDashboard();
 }
 
+// ==========================================================
+// ฟังก์ชันช่วยจัดการลากวางและย่อขนาดรูปภาพอัตโนมัติ (Drag & Drop)
+// ==========================================================
+function setupImageDropzone(prefix) {
+    const dropzone = document.getElementById(`${prefix}-dropzone`);
+    const fileInput = document.getElementById(`${prefix}-file-input`);
+    if (!dropzone || !fileInput) return;
+
+    dropzone.onclick = () => fileInput.click();
+    dropzone.ondragover = (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+    };
+    dropzone.ondragleave = () => dropzone.classList.remove('dragover');
+    dropzone.ondrop = (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            processUploadedImage(e.dataTransfer.files[0], prefix);
+        }
+    };
+    fileInput.onchange = (e) => {
+        if (e.target.files && e.target.files[0]) {
+            processUploadedImage(e.target.files[0], prefix);
+        }
+    };
+}
+
+function processUploadedImage(file, prefix) {
+    if (!file.type.startsWith('image/')) {
+        showToast('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxWidth = 900;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+            }
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+
+            const compressed = canvas.toDataURL('image/jpeg', 0.8);
+            setDropzonePreview(prefix, compressed);
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function setDropzonePreview(prefix, imageUrl) {
+    const hiddenInput = document.getElementById(`modal-${prefix}-image`);
+    const previewBox = document.getElementById(`${prefix}-preview-box`);
+    const previewImg = document.getElementById(`${prefix}-preview-img`);
+    const fileInput = document.getElementById(`${prefix}-file-input`);
+
+    if (hiddenInput) hiddenInput.value = imageUrl || '';
+    if (fileInput && !imageUrl) fileInput.value = '';
+
+    if (imageUrl && imageUrl.trim() !== '') {
+        if (previewImg) previewImg.src = imageUrl;
+        if (previewBox) previewBox.style.display = 'block';
+    } else {
+        if (previewBox) previewBox.style.display = 'none';
+    }
+}
+
 // --- ส่วนจัดการแบนเนอร์โปรโมชั่น (CRUD) ---
 function renderAdminPromotions() {
     const grid = document.getElementById('admin-promos-grid');
@@ -684,6 +759,7 @@ function renderAdminPromotions() {
 function openPromoModal(promoId = null) {
     const modal = document.getElementById('promo-modal');
     const title = document.getElementById('promo-modal-title');
+    setupImageDropzone('promo');
 
     if (promoId) {
         const p = db.promotions.find(item => item.id === promoId);
@@ -692,16 +768,16 @@ function openPromoModal(promoId = null) {
         document.getElementById('modal-promo-badge').value = p.badge;
         document.getElementById('modal-promo-title').value = p.title;
         document.getElementById('modal-promo-desc').value = p.description;
-        document.getElementById('modal-promo-image').value = p.image;
         document.getElementById('modal-promo-active').value = p.is_active ? '1' : '0';
+        setDropzonePreview('promo', p.image);
     } else {
         title.textContent = 'เพิ่มแบนเนอร์โปรโมชั่น';
         document.getElementById('edit-promo-id').value = '';
         document.getElementById('modal-promo-badge').value = '';
         document.getElementById('modal-promo-title').value = '';
         document.getElementById('modal-promo-desc').value = '';
-        document.getElementById('modal-promo-image').value = 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=800&q=80';
         document.getElementById('modal-promo-active').value = '1';
+        setDropzonePreview('promo', '');
     }
     modal.classList.remove('hidden');
 }
@@ -714,6 +790,11 @@ async function savePromotion(e) {
     const description = document.getElementById('modal-promo-desc').value.trim();
     const image = document.getElementById('modal-promo-image').value.trim();
     const is_active = document.getElementById('modal-promo-active').value === '1';
+
+    if (!image) {
+        showToast('กรุณาอัปโหลดรูปภาพแบนเนอร์ก่อนบันทึก');
+        return;
+    }
 
     if (id) {
         await sb.from('promotions').update({ badge, title, description, image, is_active }).eq('id', parseInt(id));
@@ -866,6 +947,7 @@ function renderAdminRewards() {
 function openRewardModal(rewardId = null) {
     const modal = document.getElementById('reward-modal');
     const title = document.getElementById('reward-modal-title');
+    setupImageDropzone('rew');
 
     if (rewardId) {
         const r = db.rewards.find(rw => rw.id === rewardId);
@@ -875,7 +957,7 @@ function openRewardModal(rewardId = null) {
         document.getElementById('modal-rew-desc').value = r.description;
         document.getElementById('modal-rew-points').value = r.points_required;
         document.getElementById('modal-rew-stock').value = r.stock;
-        document.getElementById('modal-rew-image').value = r.image;
+        setDropzonePreview('rew', r.image);
     } else {
         title.textContent = 'เพิ่มของรางวัลใหม่';
         document.getElementById('edit-reward-id').value = '';
@@ -883,7 +965,7 @@ function openRewardModal(rewardId = null) {
         document.getElementById('modal-rew-desc').value = '';
         document.getElementById('modal-rew-points').value = 10;
         document.getElementById('modal-rew-stock').value = 10;
-        document.getElementById('modal-rew-image').value = 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=500&q=80';
+        setDropzonePreview('rew', '');
     }
     modal.classList.remove('hidden');
 }
@@ -896,6 +978,11 @@ async function saveReward(e) {
     const pointsRequired = parseInt(document.getElementById('modal-rew-points').value);
     const stock = parseInt(document.getElementById('modal-rew-stock').value);
     const image = document.getElementById('modal-rew-image').value.trim();
+
+    if (!image) {
+        showToast('กรุณาอัปโหลดรูปภาพของรางวัลก่อนบันทึก');
+        return;
+    }
 
     if (id) {
         await sb.from('rewards').update({
@@ -982,6 +1069,7 @@ function exportReportCSV() {
 function closeModal(modalId) {
     document.getElementById(modalId).classList.add('hidden');
 }
+
 // ==========================================================
 // ระบบซิงก์ข้อมูลอัตโนมัติแบบเรียลไทม์ (Supabase Realtime)
 // ==========================================================
