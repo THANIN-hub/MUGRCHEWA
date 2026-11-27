@@ -111,7 +111,7 @@ function switchAuthTab(tab) {
 async function handleLogin(e) {
     e.preventDefault();
     const btn = document.getElementById('btn-login-submit');
-    const username = document.getElementById('login-username').value.trim();
+    const username = document.getElementById('login-username').value.trim().replace(/\s+/g, ' ');
     const password = document.getElementById('login-password').value.trim();
 
     btn.disabled = true;
@@ -122,7 +122,10 @@ async function handleLogin(e) {
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ';
 
-    const user = db.users.find(u => u.username === username && u.password === password);
+    const user = db.users.find(u =>
+        u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase() &&
+        u.password === password
+    );
     if (!user) {
         showToast('ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง');
         return;
@@ -150,24 +153,43 @@ async function handleLogin(e) {
 async function handleRegister(e) {
     e.preventDefault();
     const btn = document.getElementById('btn-reg-submit');
-    const fullName = document.getElementById('reg-fullname').value.trim();
-    const phone = document.getElementById('reg-studentid').value.trim();
-    const username = fullName; // ใช้ชื่อ-นามสกุลเป็น Username เลย
+    // ยุบช่องว่างที่เคาะเกินให้เหลือ 1 ช่อง และตัดช่องว่างหัว-ท้าย
+    const fullName = document.getElementById('reg-fullname').value.trim().replace(/\s+/g, ' ');
+    // ลบขีดหรือเว้นวรรคในเบอร์โทรให้เหลือเฉพาะตัวเลข
+    const phone = document.getElementById('reg-studentid').value.replace(/\D/g, '');
+    const username = fullName;
     const password = document.getElementById('reg-password').value.trim();
 
+    if (phone.length < 9 || phone.length > 10) {
+        showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
+        return;
+    }
+
     btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังสมัครสมาชิก...';
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจสอบข้อมูล...';
 
     await syncFromCloud();
 
-    if (db.users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
-        showToast('ชื่อ-นามสกุลนี้ถูกใช้งานแล้ว กรุณาตรวจสอบหรือเข้าสู่ระบบ');
+    // 1. ตรวจสอบชื่อ-นามสกุล / Username ซ้ำ
+    const isNameDuplicate = db.users.some(u =>
+        (u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase()) ||
+        (u.full_name && u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase())
+    );
+
+    if (isNameDuplicate) {
+        showToast('ไม่สามารถสมัครได้: ชื่อ-นามสกุลนี้มีผู้ใช้งานในระบบแล้ว');
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
         return;
     }
-    if (db.users.some(u => u.student_id === phone)) {
-        showToast('เบอร์โทรศัพท์นี้ลงทะเบียนในระบบแล้ว');
+
+    // 2. ตรวจสอบเบอร์โทรศัพท์ซ้ำ
+    const isPhoneDuplicate = db.users.some(u =>
+        u.student_id && u.student_id.replace(/\D/g, '') === phone
+    );
+
+    if (isPhoneDuplicate) {
+        showToast('ไม่สามารถสมัครได้: เบอร์โทรศัพท์นี้ลงทะเบียนในระบบแล้ว');
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
         return;
@@ -185,7 +207,7 @@ async function handleRegister(e) {
     }]).select().single();
 
     if (error) {
-        showToast('ไม่สามารถสมัครสมาชิกได้ กรุณาลองใหม่อีกครั้ง');
+        showToast('ไม่สามารถสมัครสมาชิกได้: ชื่อหรือเบอร์โทรอาจซ้ำในระบบ');
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
         return;
@@ -872,27 +894,58 @@ function openMemberModal(memberId = null) {
 async function saveMember(e) {
     e.preventDefault();
     const id = document.getElementById('edit-member-id').value;
-    const phone = document.getElementById('modal-mem-studentid').value.trim();
-    const fullName = document.getElementById('modal-mem-fullname').value.trim();
-    const username = fullName; // ใช้ชื่อ-นามสกุลเป็น Username
+    const phone = document.getElementById('modal-mem-studentid').value.replace(/\D/g, '');
+    const fullName = document.getElementById('modal-mem-fullname').value.trim().replace(/\s+/g, ' ');
+    const username = fullName;
     const password = document.getElementById('modal-mem-password').value.trim();
     const points = parseInt(document.getElementById('modal-mem-points').value) || 0;
 
-    if (id) {
-        await sb.from('users').update({
+    if (phone.length < 9 || phone.length > 10) {
+        showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
+        return;
+    }
+
+    await syncFromCloud();
+    const currentId = id ? parseInt(id) : null;
+
+    // 1. ตรวจสอบชื่อ-นามสกุล / Username ซ้ำ (ยกเว้นข้อมูลของตัวเองตอนแก้ไข)
+    const isNameDuplicate = db.users.some(u =>
+        u.id !== currentId &&
+        ((u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase()) ||
+         (u.full_name && u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()))
+    );
+
+    if (isNameDuplicate) {
+        showToast('ไม่สามารถบันทึกได้: ชื่อ-นามสกุลนี้ซ้ำกับสมาชิกอื่นในระบบ');
+        return;
+    }
+
+    // 2. ตรวจสอบเบอร์โทรศัพท์ซ้ำ (ยกเว้นข้อมูลของตัวเองตอนแก้ไข)
+    const isPhoneDuplicate = db.users.some(u =>
+        u.id !== currentId &&
+        (u.student_id && u.student_id.replace(/\D/g, '') === phone)
+    );
+
+    if (isPhoneDuplicate) {
+        showToast('ไม่สามารถบันทึกได้: เบอร์โทรศัพท์นี้ซ้ำกับสมาชิกอื่นในระบบ');
+        return;
+    }
+
+    if (currentId) {
+        const { error } = await sb.from('users').update({
             student_id: phone,
             full_name: fullName,
             username,
             password,
             points
-        }).eq('id', parseInt(id));
-        showToast('แก้ไขข้อมูลสมาชิกเรียบร้อยแล้ว');
-    } else {
-        if (db.users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
-            showToast('ชื่อ-นามสกุลนี้ซ้ำในระบบ');
+        }).eq('id', currentId);
+        if (error) {
+            showToast('เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
             return;
         }
-        await sb.from('users').insert([{
+        showToast('แก้ไขข้อมูลสมาชิกเรียบร้อยแล้ว');
+    } else {
+        const { error } = await sb.from('users').insert([{
             student_id: phone,
             full_name: fullName,
             username,
@@ -900,6 +953,10 @@ async function saveMember(e) {
             role: 'member',
             points
         }]);
+        if (error) {
+            showToast('เกิดข้อผิดพลาดในการเพิ่มสมาชิก');
+            return;
+        }
         showToast('เพิ่มสมาชิกใหม่เรียบร้อยแล้ว');
     }
 
