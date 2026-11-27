@@ -151,8 +151,8 @@ async function handleRegister(e) {
     e.preventDefault();
     const btn = document.getElementById('btn-reg-submit');
     const fullName = document.getElementById('reg-fullname').value.trim();
-    const studentId = document.getElementById('reg-studentid').value.trim();
-    const username = document.getElementById('reg-username').value.trim();
+    const phone = document.getElementById('reg-studentid').value.trim();
+    const username = fullName; // ใช้ชื่อ-นามสกุลเป็น Username เลย
     const password = document.getElementById('reg-password').value.trim();
 
     btn.disabled = true;
@@ -160,14 +160,14 @@ async function handleRegister(e) {
 
     await syncFromCloud();
 
-    if (db.users.some(u => u.username === username)) {
-        showToast('ชื่อผู้ใช้งาน (Username) นี้ถูกใช้งานแล้ว');
+    if (db.users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+        showToast('ชื่อ-นามสกุลนี้ถูกใช้งานแล้ว กรุณาตรวจสอบหรือเข้าสู่ระบบ');
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
         return;
     }
-    if (db.users.some(u => u.student_id === studentId)) {
-        showToast('รหัสนักศึกษา/บุคลากรนี้ลงทะเบียนแล้ว');
+    if (db.users.some(u => u.student_id === phone)) {
+        showToast('เบอร์โทรศัพท์นี้ลงทะเบียนในระบบแล้ว');
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
         return;
@@ -179,7 +179,7 @@ async function handleRegister(e) {
         username,
         password,
         full_name: fullName,
-        student_id: studentId,
+        student_id: phone,
         role: 'member',
         points: bonus
     }]).select().single();
@@ -249,8 +249,8 @@ function renderMemberDashboard() {
     if (latestUser) currentUser = latestUser;
 
     document.getElementById('mem-card-name').textContent = currentUser.full_name;
-    document.getElementById('mem-card-id').textContent = `รหัสนักศึกษา: ${currentUser.student_id || '-'}`;
-    document.getElementById('mem-card-username').textContent = `@${currentUser.username}`;
+    document.getElementById('mem-card-id').textContent = `เบอร์โทรศัพท์: ${currentUser.student_id || '-'}`;
+    document.getElementById('mem-card-username').textContent = '';
     document.getElementById('mem-current-points').textContent = currentUser.points.toLocaleString();
     document.getElementById('mem-rate-info').textContent = `ทุกยอดซื้อ ${db.settings.baht_per_point} บาท รับ 1 แต้ม`;
 
@@ -833,7 +833,6 @@ function renderAdminMembers() {
         <tr>
             <td>${m.student_id || '-'}</td>
             <td>${m.full_name}</td>
-            <td>${m.username}</td>
             <td><strong>${m.points.toLocaleString()}</strong> แต้ม</td>
             <td>
                 <button class="btn btn-outline-sm" onclick="openMemberModal(${m.id})">
@@ -844,7 +843,7 @@ function renderAdminMembers() {
                 </button>
             </td>
         </tr>
-    `).join('') : '<tr><td colspan="5" style="text-align:center;">ไม่พบข้อมูลสมาชิก</td></tr>';
+    `).join('') : '<tr><td colspan="4" style="text-align:center;">ไม่พบข้อมูลสมาชิก</td></tr>';
 }
 
 function openMemberModal(memberId = null) {
@@ -857,7 +856,6 @@ function openMemberModal(memberId = null) {
         document.getElementById('edit-member-id').value = m.id;
         document.getElementById('modal-mem-studentid').value = m.student_id || '';
         document.getElementById('modal-mem-fullname').value = m.full_name;
-        document.getElementById('modal-mem-username').value = m.username;
         document.getElementById('modal-mem-password').value = m.password;
         document.getElementById('modal-mem-points').value = m.points;
     } else {
@@ -865,7 +863,6 @@ function openMemberModal(memberId = null) {
         document.getElementById('edit-member-id').value = '';
         document.getElementById('modal-mem-studentid').value = '';
         document.getElementById('modal-mem-fullname').value = '';
-        document.getElementById('modal-mem-username').value = '';
         document.getElementById('modal-mem-password').value = '1234';
         document.getElementById('modal-mem-points').value = 0;
     }
@@ -875,15 +872,15 @@ function openMemberModal(memberId = null) {
 async function saveMember(e) {
     e.preventDefault();
     const id = document.getElementById('edit-member-id').value;
-    const studentId = document.getElementById('modal-mem-studentid').value.trim();
+    const phone = document.getElementById('modal-mem-studentid').value.trim();
     const fullName = document.getElementById('modal-mem-fullname').value.trim();
-    const username = document.getElementById('modal-mem-username').value.trim();
+    const username = fullName; // ใช้ชื่อ-นามสกุลเป็น Username
     const password = document.getElementById('modal-mem-password').value.trim();
     const points = parseInt(document.getElementById('modal-mem-points').value) || 0;
 
     if (id) {
         await sb.from('users').update({
-            student_id: studentId,
+            student_id: phone,
             full_name: fullName,
             username,
             password,
@@ -891,12 +888,12 @@ async function saveMember(e) {
         }).eq('id', parseInt(id));
         showToast('แก้ไขข้อมูลสมาชิกเรียบร้อยแล้ว');
     } else {
-        if (db.users.some(u => u.username === username)) {
-            showToast('ชื่อผู้ใช้งานซ้ำในระบบ');
+        if (db.users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+            showToast('ชื่อ-นามสกุลนี้ซ้ำในระบบ');
             return;
         }
         await sb.from('users').insert([{
-            student_id: studentId,
+            student_id: phone,
             full_name: fullName,
             username,
             password,
@@ -1030,7 +1027,7 @@ function renderAdminReports() {
                 <thead>
                     <tr>
                         <th>อันดับ</th>
-                        <th>รหัสนักศึกษา</th>
+                        <th>เบอร์โทรศัพท์</th>
                         <th>ชื่อ-นามสกุล</th>
                         <th>แต้มสะสมปัจจุบัน</th>
                     </tr>
@@ -1051,9 +1048,9 @@ function renderAdminReports() {
 }
 
 function exportReportCSV() {
-    let csv = '\uFEFFรหัสนักศึกษา,ชื่อ-นามสกุล,Username,แต้มสะสมปัจจุบัน\n';
+    let csv = '\uFEFFเบอร์โทรศัพท์,ชื่อ-นามสกุล,แต้มสะสมปัจจุบัน\n';
     db.users.filter(u => u.role === 'member').forEach(m => {
-        csv += `"${m.student_id || '-'}","${m.full_name}","${m.username}",${m.points}\n`;
+        csv += `"${m.student_id || '-'}","${m.full_name}",${m.points}\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

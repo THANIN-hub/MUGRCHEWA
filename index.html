@@ -34,8 +34,8 @@
             <!-- ฟอร์มเข้าสู่ระบบ -->
             <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
                 <div class="form-group">
-                    <label>ชื่อผู้ใช้งาน (Username)</label>
-                    <input type="text" id="login-username" required placeholder="กรอกชื่อผู้ใช้งาน">
+                    <label>ชื่อ-นามสกุล (Username)</label>
+                    <input type="text" id="login-username" required placeholder="กรอกชื่อ-นามสกุลที่ใช้สมัคร">
                 </div>
                 <div class="form-group">
                     <label>รหัสผ่าน (Password)</label>
@@ -49,16 +49,12 @@
             <!-- ฟอร์มสมัครสมาชิก -->
             <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
                 <div class="form-group">
-                    <label>ชื่อ-นามสกุล</label>
+                    <label>ชื่อ-นามสกุล (ใช้เป็นชื่อเข้าสู่ระบบ)</label>
                     <input type="text" id="reg-fullname" required placeholder="เช่น นายสมชาย ใจดี">
                 </div>
                 <div class="form-group">
-                    <label>รหัสนักศึกษา / รหัสบุคลากร</label>
-                    <input type="text" id="reg-studentid" required placeholder="เช่น 66309010001">
-                </div>
-                <div class="form-group">
-                    <label>ชื่อผู้ใช้งาน (Username)</label>
-                    <input type="text" id="reg-username" required placeholder="ตั้งชื่อผู้ใช้งานภาษาอังกฤษ">
+                    <label>เบอร์โทรศัพท์</label>
+                    <input type="tel" id="reg-studentid" required placeholder="เช่น 0812345678" maxlength="10">
                 </div>
                 <div class="form-group">
                     <label>รหัสผ่าน (Password)</label>
@@ -110,13 +106,13 @@
                         <div>
                             <span class="card-tag">MUK RCHEEWA MEMBER</span>
                             <h2 id="mem-card-name">ชื่อสมาชิก</h2>
-                            <p id="mem-card-id">รหัสนักศึกษา: -</p>
+                            <p id="mem-card-id">เบอร์โทรศัพท์: -</p>
                         </div>
                         <div id="member-qrcode" class="qr-mock" title="ให้พนักงานสแกนเพื่อสะสมแต้ม"></div>
                     </div>
                     <div class="card-bottom">
                         <span>ร้านมักอาชีวะ วิทยาลัยอาชีวศึกษามหาสารคาม</span>
-                        <span id="mem-card-username">@user</span>
+                        <span id="mem-card-username"></span>
                     </div>
                 </div>
 
@@ -261,8 +257,8 @@
                         <h3><i class="fa-solid fa-cash-register"></i> บันทึกยอดซื้อและให้แต้มสมาชิก</h3>
                         <form onsubmit="handleRecordPurchase(event)">
                             <div class="form-group">
-                                <label>ค้นหาสมาชิก (พิมพ์รหัสนักศึกษา / ชื่อ / สแกน QR)</label>
-                                <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="พิมพ์รหัสหรือชื่อเพื่อค้นหาทันที..." oninput="handlePOSMemberSearch()" required autocomplete="off">
+                                <label>ค้นหาสมาชิก (พิมพ์เบอร์โทรศัพท์ / ชื่อ / สแกน QR)</label>
+                                <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="พิมพ์เบอร์โทรหรือชื่อเพื่อค้นหาทันที..." oninput="handlePOSMemberSearch()" required autocomplete="off">
                                 <datalist id="pos-members-datalist"></datalist>
                                 <input type="hidden" id="pos-selected-user-id">
                                 <small id="pos-member-status" style="color:var(--primary-blue); font-weight:500; display:block; margin-top:4px;"></small>
@@ -363,7 +359,7 @@
                     <div class="card-header-flex">
                         <h3><i class="fa-solid fa-user-gear"></i> จัดการข้อมูลสมาชิก</h3>
                         <div class="action-bar">
-                            <input type="text" id="member-search" placeholder="ค้นหาชื่อ / รหัสนักศึกษา..." oninput="renderAdminMembers()">
+                            <input type="text" id="member-search" placeholder="ค้นหาชื่อ / เบอร์โทรศัพท์..." oninput="renderAdminMembers()">
                             <button class="btn btn-primary" onclick="openMemberModal()">
                                 <i class="fa-solid fa-plus"></i> เพิ่มสมาชิก
                             </button>
@@ -373,9 +369,8 @@
                         <table class="data-table">
                             <thead>
                                 <tr>
-                                    <th>รหัสนักศึกษา</th>
-                                    <th>ชื่อ-นามสกุล</th>
-                                    <th>Username</th>
+                                    <th>เบอร์โทรศัพท์</th>
+                                    <th>ชื่อ-นามสกุล (Username)</th>
                                     <th>แต้มสะสม</th>
                                     <th>จัดการ</th>
                                 </tr>
@@ -481,16 +476,12 @@
             <form onsubmit="saveMember(event)">
                 <input type="hidden" id="edit-member-id">
                 <div class="form-group">
-                    <label>รหัสนักศึกษา</label>
-                    <input type="text" id="modal-mem-studentid" required>
+                    <label>เบอร์โทรศัพท์</label>
+                    <input type="tel" id="modal-mem-studentid" required maxlength="10" placeholder="เช่น 0812345678">
                 </div>
                 <div class="form-group">
-                    <label>ชื่อ-นามสกุล</label>
+                    <label>ชื่อ-นามสกุล (ใช้เป็น Username เข้าสู่ระบบ)</label>
                     <input type="text" id="modal-mem-fullname" required>
-                </div>
-                <div class="form-group">
-                    <label>ชื่อผู้ใช้งาน (Username)</label>
-                    <input type="text" id="modal-mem-username" required>
                 </div>
                 <div class="form-group">
                     <label>รหัสผ่าน</label>
