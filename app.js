@@ -33,9 +33,22 @@ let currentUser = null;
 let rewardFilterMode = 'all';
 let reportPeriod = 'today';
 let isSpinning = false;
+let isRedeeming = false;
 let currentWheelRotation = 0;
 let calViewYear = new Date().getFullYear();
 let calViewMonth = new Date().getMonth();
+let promoSlideIndex = 0;
+let promoSlideTimer = null;
+let realtimeChannel = null;
+
+function escapeHTML(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 // โหลดข้อมูลล่าสุดทั้งหมดจาก Supabase
 async function syncFromCloud() {
@@ -50,6 +63,11 @@ async function syncFromCloud() {
         ]);
 
         if (usersRes.error) throw usersRes.error;
+        if (rewardsRes.error) throw rewardsRes.error;
+        if (historyRes.error) throw historyRes.error;
+        if (redeemRes.error) throw redeemRes.error;
+        if (promoRes.error) throw promoRes.error;
+        if (settingsRes.error) throw settingsRes.error;
 
         db.users = usersRes.data || [];
         db.rewards = rewardsRes.data || [];
@@ -57,23 +75,50 @@ async function syncFromCloud() {
         db.redemptions = redeemRes.data || [];
         db.promotions = promoRes.data || [];
 
-        if (settingsRes.data) {
+        db.settings = {
+            baht_per_point: 20,
+            welcome_bonus: 5,
+            spin_config: { ...DEFAULT_SPIN_CONFIG }
+        };
+
+        if (Array.isArray(settingsRes.data)) {
             settingsRes.data.forEach(s => {
+                if (!s || !s.setting_key) return;
                 if (s.setting_key === 'lucky_spin_config') {
                     try {
                         const parsed = JSON.parse(s.setting_value);
+                        const prizes = Array.isArray(parsed.prizes) && parsed.prizes.length === 6
+                            ? parsed.prizes.map(v => Math.max(0, Number(v) || 0))
+                            : [...DEFAULT_SPIN_CONFIG.prizes];
+                        const weights = Array.isArray(parsed.weights) && parsed.weights.length === 6
+                            ? parsed.weights.map(v => Math.max(1, Number(v) || 1))
+                            : [...DEFAULT_SPIN_CONFIG.weights];
+
                         db.settings.spin_config = {
                             enabled: parsed.enabled !== false,
-                            cost: Number(parsed.cost) >= 0 ? Number(parsed.cost) : 3,
-                            prizes: Array.isArray(parsed.prizes) && parsed.prizes.length === 6 ? parsed.prizes.map(Number) : [...DEFAULT_SPIN_CONFIG.prizes],
-                            weights: Array.isArray(parsed.weights) && parsed.weights.length === 6 ? parsed.weights.map(Number) : [...DEFAULT_SPIN_CONFIG.weights]
+                            cost: Number.isFinite(Number(parsed.cost)) && Number(parsed.cost) >= 0 ? Number(parsed.cost) : 3,
+                            prizes,
+                            weights
                         };
-                    } catch (e) {}
+                    } catch (e) {
+                        db.settings.spin_config = { ...DEFAULT_SPIN_CONFIG };
+                    }
                 } else if (!s.setting_key.startsWith('reset_req_')) {
-                    db.settings[s.setting_key] = parseInt(s.setting_value);
+                    const numVal = parseInt(s.setting_value, 10);
+                    if (Number.isFinite(numVal) && numVal > 0) {
+                        db.settings[s.setting_key] = numVal;
+                    }
                 }
             });
         }
+
+        if (currentUser) {
+            const refreshedMe = db.users.find(u => String(u.id) === String(currentUser.id));
+            if (refreshedMe) {
+                currentUser = refreshedMe;
+            }
+        }
+
         return true;
     } catch (err) {
         console.error('Supabase Sync Error:', err);
@@ -99,9 +144,10 @@ async function refreshCurrentView() {
 // ==========================================================
 function showToast(message) {
     const container = document.getElementById('toast-container');
+    if (!container) return;
     const toast = document.createElement('div');
     toast.className = 'toast';
-    toast.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${message}`;
+    toast.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${escapeHTML(message)}`;
     container.appendChild(toast);
     setTimeout(() => {
         toast.remove();
@@ -111,7 +157,7 @@ function showToast(message) {
 function formatDateTime(isoString) {
     if (!isoString) return '-';
     const date = new Date(isoString);
-    if (isNaN(date.getTime())) return isoString;
+    if (isNaN(date.getTime())) return String(isoString);
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
@@ -121,7 +167,8 @@ function formatDateTime(isoString) {
 }
 
 function formatTicketCode(id) {
-    return `#${String(id).padStart(4, '0')}`;
+    const num = Number(id);
+    return `#${Number.isFinite(num) ? String(num).padStart(4, '0') : String(id || '0000')}`;
 }
 
 function getLocalDateKey(isoString) {
@@ -133,8 +180,8 @@ function getLocalDateKey(isoString) {
 // คำนวณระดับสมาชิก (Member Tier) จากยอดแต้มสะสมรวม
 function getMemberTierInfo(userId, currentPoints = 0) {
     const earnedSum = db.point_history
-        .filter(h => h.user_id === userId && Number(h.points_earned) > 0)
-        .reduce((sum, h) => sum + Number(h.points_earned), 0);
+        .filter(h => String(h.user_id) === String(userId) && Number(h.points_earned) > 0)
+        .reduce((sum, h) => sum + (Number(h.points_earned) || 0), 0);
 
     const lifetimePoints = Math.max(earnedSum, Number(currentPoints) || 0);
 
@@ -178,21 +225,21 @@ function switchAuthTab(tab) {
     document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
 
     if (tab === 'login') {
-        document.querySelectorAll('.tab-btn')[0].classList.add('active');
-        document.getElementById('login-form').classList.add('active');
+        document.querySelectorAll('.tab-btn')[0]?.classList.add('active');
+        document.getElementById('login-form')?.classList.add('active');
     } else {
-        document.querySelectorAll('.tab-btn')[1].classList.add('active');
-        document.getElementById('register-form').classList.add('active');
+        document.querySelectorAll('.tab-btn')[1]?.classList.add('active');
+        document.getElementById('register-form')?.classList.add('active');
     }
 }
 
 function openForgotModal() {
-    const loginVal = document.getElementById('login-username').value.replace(/\D/g, '');
+    const loginVal = (document.getElementById('login-username')?.value || '').replace(/\D/g, '');
     document.getElementById('forgot-phone').value = loginVal;
     document.getElementById('forgot-fullname').value = '';
     document.getElementById('forgot-new-password').value = '';
     document.getElementById('forgot-confirm-password').value = '';
-    document.getElementById('forgot-modal').classList.remove('hidden');
+    document.getElementById('forgot-modal')?.classList.remove('hidden');
 }
 
 async function handleForgotPassword(e) {
@@ -221,12 +268,17 @@ async function handleForgotPassword(e) {
     btn.disabled = true;
     btn.textContent = 'กำลังตรวจสอบข้อมูล...';
 
-    await syncFromCloud();
+    const ok = await syncFromCloud();
+    if (!ok) {
+        btn.disabled = false;
+        btn.textContent = 'เปลี่ยนรหัสผ่านทันที';
+        return;
+    }
 
     const member = db.users.find(u =>
         u.role === 'member' &&
         u.student_id &&
-        u.student_id.replace(/\D/g, '') === phone &&
+        String(u.student_id).replace(/\D/g, '') === phone &&
         u.full_name &&
         u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()
     );
@@ -266,20 +318,20 @@ function applyLoggedInUI(user, rememberMe = null) {
         localStorage.removeItem(SESSION_KEY);
     }
 
-    document.getElementById('auth-view').classList.add('hidden');
-    document.getElementById('main-app').classList.remove('hidden');
+    document.getElementById('auth-view')?.classList.add('hidden');
+    document.getElementById('main-app')?.classList.remove('hidden');
     document.getElementById('nav-user-name').textContent = user.full_name;
 
     if (user.role === 'admin') {
         document.getElementById('nav-user-role').textContent = 'ผู้ดูแลร้าน';
-        document.getElementById('member-dashboard').classList.add('hidden');
-        document.getElementById('admin-dashboard').classList.remove('hidden');
+        document.getElementById('member-dashboard')?.classList.add('hidden');
+        document.getElementById('admin-dashboard')?.classList.remove('hidden');
         renderAdminDashboard();
         focusPOSBarcodeInput();
     } else {
         document.getElementById('nav-user-role').textContent = 'สมาชิก';
-        document.getElementById('admin-dashboard').classList.add('hidden');
-        document.getElementById('member-dashboard').classList.remove('hidden');
+        document.getElementById('admin-dashboard')?.classList.add('hidden');
+        document.getElementById('member-dashboard')?.classList.remove('hidden');
         renderMemberDashboard();
     }
 }
@@ -301,26 +353,34 @@ async function restoreSession() {
 }
 
 async function handleLogin(e) {
-    e.preventDefault();
+    if (e && typeof e.preventDefault === 'function') {
+        e.preventDefault();
+    }
     const btn = document.getElementById('btn-login-submit');
     const rawInput = document.getElementById('login-username').value.trim();
     const cleanPhone = rawInput.replace(/\D/g, '');
     const password = document.getElementById('login-password').value.trim();
 
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังเข้าสู่ระบบ...';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังเข้าสู่ระบบ...';
+    }
 
-    await syncFromCloud();
+    const ok = await syncFromCloud();
 
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ';
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ';
+    }
+
+    if (!ok) return;
 
     const user = db.users.find(u => {
-        if (u.password !== password) return false;
+        if (String(u.password) !== password) return false;
         if (u.role === 'admin') {
-            return u.username.toLowerCase() === rawInput.toLowerCase();
+            return String(u.username || '').toLowerCase() === rawInput.toLowerCase();
         }
-        const dbPhone = (u.student_id || '').replace(/\D/g, '');
+        const dbPhone = String(u.student_id || '').replace(/\D/g, '');
         return cleanPhone !== '' && dbPhone === cleanPhone;
     });
 
@@ -342,15 +402,30 @@ async function handleRegister(e) {
     const username = fullName;
     const password = document.getElementById('reg-password').value.trim();
 
+    if (!fullName) {
+        showToast('กรุณากรอกชื่อ-นามสกุล');
+        return;
+    }
+
     if (phone.length < 9 || phone.length > 10) {
         showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
+        return;
+    }
+
+    if (!password) {
+        showToast('กรุณากำหนดรหัสผ่าน');
         return;
     }
 
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจสอบข้อมูล...';
 
-    await syncFromCloud();
+    const ok = await syncFromCloud();
+    if (!ok) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
+        return;
+    }
 
     const isNameDuplicate = db.users.some(u =>
         (u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase()) ||
@@ -365,7 +440,7 @@ async function handleRegister(e) {
     }
 
     const isPhoneDuplicate = db.users.some(u =>
-        u.student_id && u.student_id.replace(/\D/g, '') === phone
+        u.student_id && String(u.student_id).replace(/\D/g, '') === phone
     );
 
     if (isPhoneDuplicate) {
@@ -375,7 +450,7 @@ async function handleRegister(e) {
         return;
     }
 
-    const bonus = db.settings.welcome_bonus || 5;
+    const bonus = Number.isFinite(Number(db.settings.welcome_bonus)) ? Number(db.settings.welcome_bonus) : 5;
 
     const { data: insertedUser, error } = await sb.from('users').insert([{
         username,
@@ -386,37 +461,44 @@ async function handleRegister(e) {
         points: bonus
     }]).select().single();
 
-    if (error) {
+    if (error || !insertedUser) {
         showToast('ไม่สามารถสมัครสมาชิกได้: ชื่อหรือเบอร์โทรอาจซ้ำในระบบ');
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
         return;
     }
 
-    await sb.from('point_history').insert([{
-        user_id: insertedUser.id,
-        amount: 0,
-        points_earned: bonus,
-        note: 'โบนัสต้อนรับสมาชิกใหม่'
-    }]);
+    if (bonus > 0) {
+        await sb.from('point_history').insert([{
+            user_id: insertedUser.id,
+            amount: 0,
+            points_earned: bonus,
+            note: 'โบนัสต้อนรับสมาชิกใหม่'
+        }]);
+    }
 
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
     e.target.reset();
-    showToast(`สมัครสมาชิกสำเร็จ! ได้รับโบนัส ${bonus} แต้ม`);
 
-    document.getElementById('login-username').value = phone;
-    document.getElementById('login-password').value = password;
-    await handleLogin(new Event('submit'));
+    await syncFromCloud();
+    const freshUser = db.users.find(u => String(u.id) === String(insertedUser.id)) || insertedUser;
+    const isRemember = document.getElementById('login-remember')?.checked ?? true;
+    applyLoggedInUI(freshUser, isRemember);
+    showToast(`สมัครสมาชิกสำเร็จ! ได้รับโบนัส ${bonus} แต้ม`);
 }
 
 function handleLogout() {
     currentUser = null;
+    if (promoSlideTimer) {
+        clearInterval(promoSlideTimer);
+        promoSlideTimer = null;
+    }
     sessionStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(SESSION_KEY);
-    document.getElementById('main-app').classList.add('hidden');
-    document.getElementById('auth-view').classList.remove('hidden');
-    document.getElementById('login-form').reset();
+    document.getElementById('main-app')?.classList.add('hidden');
+    document.getElementById('auth-view')?.classList.remove('hidden');
+    document.getElementById('login-form')?.reset();
     showToast('ออกจากระบบเรียบร้อยแล้ว');
 }
 
@@ -425,48 +507,55 @@ function handleLogout() {
 // ==========================================================
 function generateMemberBarcode(codeText) {
     const svgEl = document.getElementById('member-barcode');
-    if (!svgEl || typeof JsBarcode === 'undefined') return;
-    JsBarcode(svgEl, String(codeText), {
-        format: "CODE128",
-        lineColor: "#0F172A",
-        background: "#FFFFFF",
-        width: 2,
-        height: 46,
-        displayValue: true,
-        fontSize: 13,
-        font: "Prompt",
-        margin: 4
-    });
+    if (!svgEl || typeof JsBarcode === 'undefined' || !codeText) return;
+    try {
+        JsBarcode(svgEl, String(codeText), {
+            format: "CODE128",
+            lineColor: "#0F172A",
+            background: "#FFFFFF",
+            width: 2,
+            height: 46,
+            displayValue: true,
+            fontSize: 13,
+            font: "Prompt",
+            margin: 4
+        });
+    } catch (e) {
+        console.warn('Barcode render error:', e);
+    }
 }
 
 function openMemberBarcodeModal() {
     if (!currentUser) return;
-    const codeText = currentUser.student_id || currentUser.username;
+    const codeText = currentUser.student_id || currentUser.username || String(currentUser.id);
     const svgLarge = document.getElementById('member-barcode-large');
     if (svgLarge && typeof JsBarcode !== 'undefined') {
-        JsBarcode(svgLarge, String(codeText), {
-            format: "CODE128",
-            lineColor: "#0F172A",
-            background: "#FFFFFF",
-            width: 2.6,
-            height: 85,
-            displayValue: true,
-            fontSize: 16,
-            font: "Prompt",
-            margin: 6
-        });
+        try {
+            JsBarcode(svgLarge, String(codeText), {
+                format: "CODE128",
+                lineColor: "#0F172A",
+                background: "#FFFFFF",
+                width: 2.6,
+                height: 85,
+                displayValue: true,
+                fontSize: 16,
+                font: "Prompt",
+                margin: 6
+            });
+        } catch (e) {
+            console.warn('Large barcode render error:', e);
+        }
     }
     document.getElementById('barcode-modal-name').textContent = currentUser.full_name;
     document.getElementById('barcode-modal-phone').textContent = currentUser.student_id || '-';
-    document.getElementById('barcode-modal').classList.remove('hidden');
+    document.getElementById('barcode-modal')?.classList.remove('hidden');
 }
 
-// เช็กอินรายวันรับแต้มฟรี (+1 แต้ม) & ปฏิทินการเช็กอิน
 function getMemberCheckinDatesSet() {
     const set = new Set();
     if (!currentUser) return set;
     db.point_history.forEach(h => {
-        if (h.user_id === currentUser.id && h.note === 'เช็กอินรายวันรับแต้มฟรี') {
+        if (String(h.user_id) === String(currentUser.id) && h.note === 'เช็กอินรายวันรับแต้มฟรี') {
             const key = getLocalDateKey(h.created_at);
             if (key) set.add(key);
         }
@@ -497,20 +586,28 @@ function updateCheckinButtonUI() {
 async function handleDailyCheckin() {
     if (!currentUser) return;
     const btn = document.getElementById('btn-daily-checkin');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังเช็กอิน...';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังเช็กอิน...';
+    }
 
-    await syncFromCloud();
+    const ok = await syncFromCloud();
+    if (!ok) {
+        updateCheckinButtonUI();
+        return;
+    }
+
     if (hasCheckedInToday()) {
         updateCheckinButtonUI();
         showToast('วันนี้คุณเช็กอินรับแต้มไปแล้ว พรุ่งนี้มาใหม่นะครับ!');
         return;
     }
 
-    const latestUser = db.users.find(u => u.id === currentUser.id);
-    const newPoints = (latestUser ? latestUser.points : currentUser.points) + 1;
+    const latestUser = db.users.find(u => String(u.id) === String(currentUser.id));
+    const basePoints = latestUser ? Number(latestUser.points) || 0 : Number(currentUser.points) || 0;
+    const newPoints = basePoints + 1;
 
-    await Promise.all([
+    const [updRes, insRes] = await Promise.all([
         sb.from('users').update({ points: newPoints }).eq('id', currentUser.id),
         sb.from('point_history').insert([{
             user_id: currentUser.id,
@@ -519,6 +616,12 @@ async function handleDailyCheckin() {
             note: 'เช็กอินรายวันรับแต้มฟรี'
         }])
     ]);
+
+    if (updRes.error || insRes.error) {
+        showToast('เกิดข้อผิดพลาดในการเช็กอิน กรุณาลองใหม่');
+        updateCheckinButtonUI();
+        return;
+    }
 
     await syncFromCloud();
     renderMemberDashboard();
@@ -530,7 +633,7 @@ function openCheckinCalendarModal() {
     calViewYear = now.getFullYear();
     calViewMonth = now.getMonth();
     renderCheckinCalendar();
-    document.getElementById('checkin-calendar-modal').classList.remove('hidden');
+    document.getElementById('checkin-calendar-modal')?.classList.remove('hidden');
 }
 
 function changeCalendarMonth(delta) {
@@ -551,7 +654,8 @@ function renderCheckinCalendar() {
         'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
     ];
     const thaiYear = calViewYear + 543;
-    document.getElementById('cal-month-title').textContent = `${monthNames[calViewMonth]} ${thaiYear}`;
+    const titleEl = document.getElementById('cal-month-title');
+    if (titleEl) titleEl.textContent = `${monthNames[calViewMonth]} ${thaiYear}`;
 
     const checkedSet = getMemberCheckinDatesSet();
     const todayKey = getLocalDateKey();
@@ -560,6 +664,8 @@ function renderCheckinCalendar() {
     const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
 
     const grid = document.getElementById('cal-days-grid');
+    if (!grid) return;
+
     let html = '';
     let checkedThisMonth = 0;
 
@@ -587,10 +693,11 @@ function renderCheckinCalendar() {
     }
 
     grid.innerHTML = html;
-    document.getElementById('cal-month-summary').textContent = `เช็กอินเดือนนี้ ${checkedThisMonth} วัน`;
+    const summaryEl = document.getElementById('cal-month-summary');
+    if (summaryEl) summaryEl.textContent = `เช็กอินเดือนนี้ ${checkedThisMonth} วัน`;
 }
 
-// วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin - ใช้ค่าจากแอดมิน)
+// วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin)
 function syncWheelLabelsUI() {
     const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
     for (let i = 0; i < 6; i++) {
@@ -608,7 +715,7 @@ function syncWheelLabelsUI() {
 
     const descEl = document.getElementById('spin-desc-text');
     if (descEl) {
-        const maxPrize = Math.max(...cfg.prizes.map(Number));
+        const maxPrize = Math.max(...cfg.prizes.map(n => Number(n) || 0));
         descEl.innerHTML = cfg.cost > 0
             ? `ใช้ <strong>${cfg.cost} แต้ม</strong> ต่อการหมุน 1 ครั้ง ลุ้นรับสูงสุด <strong>${maxPrize} แต้ม!</strong>`
             : `หมุนวงล้อ<strong>ฟรี!</strong> ลุ้นรับโบนัสสูงสุด <strong>${maxPrize} แต้ม!</strong>`;
@@ -625,15 +732,17 @@ function syncWheelLabelsUI() {
 function openLuckySpinModal() {
     if (!currentUser) return;
     syncWheelLabelsUI();
-    document.getElementById('spin-user-points').textContent = currentUser.points.toLocaleString();
+    document.getElementById('spin-user-points').textContent = (Number(currentUser.points) || 0).toLocaleString();
     document.getElementById('spin-result-box').textContent = '';
-    document.getElementById('spin-modal').classList.remove('hidden');
+    document.getElementById('spin-modal')?.classList.remove('hidden');
 }
 
 async function handleSpinWheel() {
     if (!currentUser || isSpinning) return;
 
-    await syncFromCloud();
+    const ok = await syncFromCloud();
+    if (!ok) return;
+
     const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
     if (!cfg.enabled) {
         showToast('วงล้อลุ้นแต้มปิดให้บริการชั่วคราว');
@@ -641,9 +750,11 @@ async function handleSpinWheel() {
         return;
     }
 
-    const spinCost = Number(cfg.cost) || 0;
-    const latestUser = db.users.find(u => u.id === currentUser.id);
-    if (!latestUser || latestUser.points < spinCost) {
+    const spinCost = Math.max(0, Number(cfg.cost) || 0);
+    const latestUser = db.users.find(u => String(u.id) === String(currentUser.id));
+    const currentPts = latestUser ? Number(latestUser.points) || 0 : 0;
+
+    if (!latestUser || currentPts < spinCost) {
         showToast(`แต้มไม่พอหมุนวงล้อ (ต้องใช้ ${spinCost} แต้ม)`);
         return;
     }
@@ -653,14 +764,18 @@ async function handleSpinWheel() {
     const resultBox = document.getElementById('spin-result-box');
     const wheel = document.getElementById('lucky-wheel');
 
-    btn.disabled = true;
-    resultBox.textContent = 'กำลังหมุนลุ้นรางวัล...';
+    if (btn) btn.disabled = true;
+    if (resultBox) {
+        resultBox.style.color = 'var(--primary-blue)';
+        resultBox.textContent = 'กำลังหมุนลุ้นรางวัล...';
+    }
 
-    const prizes = cfg.prizes.map(Number);
+    const prizes = cfg.prizes.map(p => Math.max(0, Number(p) || 0));
     const weights = cfg.weights.map(w => Math.max(1, Number(w) || 1));
     const totalWeight = weights.reduce((a, b) => a + b, 0);
     let rand = Math.random() * totalWeight;
     let chosenIdx = 0;
+
     for (let i = 0; i < weights.length; i++) {
         if (rand < weights[i]) {
             chosenIdx = i;
@@ -676,46 +791,66 @@ async function handleSpinWheel() {
     const delta = (targetMod - currentMod + 360) % 360;
 
     currentWheelRotation += 1800 + delta;
-    wheel.style.transform = `rotate(${currentWheelRotation}deg)`;
+    if (wheel) {
+        wheel.style.transform = `rotate(${currentWheelRotation}deg)`;
+    }
 
-    const netPoints = latestUser.points - spinCost + wonPoints;
+    const netPoints = Math.max(0, currentPts - spinCost + wonPoints);
+    const netDelta = netPoints - currentPts;
 
     setTimeout(async () => {
-        await Promise.all([
-            sb.from('users').update({ points: netPoints }).eq('id', latestUser.id),
-            sb.from('point_history').insert([{
-                user_id: latestUser.id,
-                amount: 0,
-                points_earned: wonPoints - spinCost,
-                note: `หมุนวงล้อลุ้นโชค (ใช้ ${spinCost} แต้ม, ได้รับ +${wonPoints} แต้ม)`
-            }])
-        ]);
+        try {
+            const [updRes, insRes] = await Promise.all([
+                sb.from('users').update({ points: netPoints }).eq('id', latestUser.id),
+                sb.from('point_history').insert([{
+                    user_id: latestUser.id,
+                    amount: 0,
+                    points_earned: netDelta,
+                    note: `หมุนวงล้อลุ้นโชค (ใช้ ${spinCost} แต้ม, ได้รับ +${wonPoints} แต้ม)`
+                }])
+            ]);
 
-        await syncFromCloud();
-        renderMemberDashboard();
+            if (updRes.error || insRes.error) {
+                throw new Error(updRes.error?.message || insRes.error?.message || 'Spin update failed');
+            }
 
-        document.getElementById('spin-user-points').textContent = netPoints.toLocaleString();
-        if (wonPoints > 0) {
-            resultBox.style.color = 'var(--success-green)';
-            resultBox.innerHTML = `<i class="fa-solid fa-sparkles"></i> ยินดีด้วย! คุณได้รับ +${wonPoints} แต้ม!`;
-            showToast(`หมุนวงล้อได้ +${wonPoints} แต้ม!`);
-        } else {
-            resultBox.style.color = 'var(--danger-red)';
-            resultBox.innerHTML = `เสียดายจัง รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะ!`;
-            showToast('รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะครับ');
+            await syncFromCloud();
+            renderMemberDashboard();
+
+            const ptsEl = document.getElementById('spin-user-points');
+            if (ptsEl) ptsEl.textContent = netPoints.toLocaleString();
+
+            if (resultBox) {
+                if (wonPoints > 0) {
+                    resultBox.style.color = 'var(--success-green)';
+                    resultBox.innerHTML = `<i class="fa-solid fa-sparkles"></i> ยินดีด้วย! คุณได้รับ +${wonPoints} แต้ม!`;
+                    showToast(`หมุนวงล้อได้ +${wonPoints} แต้ม!`);
+                } else {
+                    resultBox.style.color = 'var(--danger-red)';
+                    resultBox.textContent = 'เสียดายจัง รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะ!';
+                    showToast('รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะครับ');
+                }
+            }
+        } catch (err) {
+            console.error('Spin settlement error:', err);
+            showToast('บันทึกผลวงล้อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+            if (resultBox) {
+                resultBox.style.color = 'var(--danger-red)';
+                resultBox.textContent = 'เกิดข้อผิดพลาดในการบันทึกผล';
+            }
+        } finally {
+            isSpinning = false;
+            if (btn) btn.disabled = false;
+            syncWheelLabelsUI();
         }
-
-        isSpinning = false;
-        btn.disabled = false;
-        syncWheelLabelsUI();
     }, 3600);
 }
 
 function openTicketModal(redemptionId) {
-    const item = db.redemptions.find(r => r.id === redemptionId);
+    const item = db.redemptions.find(r => String(r.id) === String(redemptionId));
     if (!item) return;
 
-    const reward = db.rewards.find(rw => rw.id === item.reward_id);
+    const reward = db.rewards.find(rw => String(rw.id) === String(item.reward_id));
     const code = formatTicketCode(item.id);
 
     const imgEl = document.getElementById('ticket-reward-img');
@@ -729,7 +864,7 @@ function openTicketModal(redemptionId) {
     document.getElementById('ticket-member-info').textContent = `ผู้แลก: ${currentUser.full_name} (${currentUser.student_id || '-'})`;
     document.getElementById('ticket-date').textContent = `วัน-เวลาที่แลก: ${formatDateTime(item.created_at)}`;
 
-    document.getElementById('ticket-modal').classList.remove('hidden');
+    document.getElementById('ticket-modal')?.classList.remove('hidden');
 }
 
 function openProfileModal() {
@@ -739,7 +874,7 @@ function openProfileModal() {
     document.getElementById('prof-old-password').value = '';
     document.getElementById('prof-new-password').value = '';
     document.getElementById('prof-confirm-password').value = '';
-    document.getElementById('profile-modal').classList.remove('hidden');
+    document.getElementById('profile-modal')?.classList.remove('hidden');
 }
 
 async function saveMemberProfile(e) {
@@ -788,10 +923,15 @@ async function saveMemberProfile(e) {
     btn.disabled = true;
     btn.textContent = 'กำลังบันทึก...';
 
-    await syncFromCloud();
+    const ok = await syncFromCloud();
+    if (!ok) {
+        btn.disabled = false;
+        btn.textContent = 'บันทึกการเปลี่ยนแปลง';
+        return;
+    }
 
     const isNameDuplicate = db.users.some(u =>
-        u.id !== currentUser.id &&
+        String(u.id) !== String(currentUser.id) &&
         ((u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()) ||
          (u.full_name && u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()))
     );
@@ -804,8 +944,8 @@ async function saveMemberProfile(e) {
     }
 
     const isPhoneDuplicate = db.users.some(u =>
-        u.id !== currentUser.id &&
-        (u.student_id && u.student_id.replace(/\D/g, '') === phone)
+        String(u.id) !== String(currentUser.id) &&
+        (u.student_id && String(u.student_id).replace(/\D/g, '') === phone)
     );
 
     if (isPhoneDuplicate) {
@@ -831,7 +971,7 @@ async function saveMemberProfile(e) {
     }
 
     await syncFromCloud();
-    const updatedUser = db.users.find(u => u.id === currentUser.id);
+    const updatedUser = db.users.find(u => String(u.id) === String(currentUser.id));
     if (updatedUser) {
         currentUser = updatedUser;
         document.getElementById('nav-user-name').textContent = updatedUser.full_name;
@@ -846,8 +986,8 @@ async function switchMemberTab(tabName, btnElement) {
     document.querySelectorAll('#member-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('#member-dashboard .tab-content').forEach(c => c.classList.remove('active'));
 
-    btnElement.classList.add('active');
-    document.getElementById(`mem-tab-${tabName}`).classList.add('active');
+    btnElement?.classList.add('active');
+    document.getElementById(`mem-tab-${tabName}`)?.classList.add('active');
 
     await syncFromCloud();
     renderMemberDashboard();
@@ -859,7 +999,11 @@ function renderMemberPointsGoal() {
     const goalBar = document.getElementById('mem-goal-bar');
     if (!goalText || !goalPercent || !goalBar) return;
 
-    const availableRewards = db.rewards.filter(r => r.stock > 0).sort((a, b) => a.points_required - b.points_required);
+    const currentPts = Number(currentUser?.points) || 0;
+    const availableRewards = db.rewards
+        .filter(r => (Number(r.stock) || 0) > 0 && (Number(r.points_required) || 0) > 0)
+        .sort((a, b) => Number(a.points_required) - Number(b.points_required));
+
     if (!availableRewards.length) {
         goalText.textContent = 'สะสมแต้มต่อเนื่องเพื่อแลกของรางวัลพิเศษ';
         goalPercent.textContent = '100%';
@@ -867,10 +1011,11 @@ function renderMemberPointsGoal() {
         return;
     }
 
-    const nextTarget = availableRewards.find(r => r.points_required > currentUser.points);
+    const nextTarget = availableRewards.find(r => Number(r.points_required) > currentPts);
     if (nextTarget) {
-        const diff = nextTarget.points_required - currentUser.points;
-        const pct = Math.min(100, Math.round((currentUser.points / nextTarget.points_required) * 100));
+        const req = Number(nextTarget.points_required);
+        const diff = req - currentPts;
+        const pct = Math.max(0, Math.min(100, Math.round((currentPts / req) * 100)));
         goalText.textContent = `อีก ${diff} แต้ม แลก "${nextTarget.name}"`;
         goalPercent.textContent = `${pct}%`;
         goalBar.style.width = `${pct}%`;
@@ -883,15 +1028,17 @@ function renderMemberPointsGoal() {
 }
 
 function renderMemberDashboard() {
-    const latestUser = db.users.find(u => u.id === currentUser.id);
+    if (!currentUser) return;
+    const latestUser = db.users.find(u => String(u.id) === String(currentUser.id));
     if (latestUser) currentUser = latestUser;
 
+    const currentPts = Number(currentUser.points) || 0;
     document.getElementById('mem-card-name').textContent = currentUser.full_name;
     document.getElementById('mem-card-id').textContent = `เบอร์โทรศัพท์: ${currentUser.student_id || '-'}`;
-    document.getElementById('mem-current-points').textContent = currentUser.points.toLocaleString();
+    document.getElementById('mem-current-points').textContent = currentPts.toLocaleString();
     document.getElementById('mem-rate-info').textContent = `ทุกยอดซื้อ ${db.settings.baht_per_point} บาท รับ 1 แต้ม`;
 
-    const tier = getMemberTierInfo(currentUser.id, currentUser.points);
+    const tier = getMemberTierInfo(currentUser.id, currentPts);
     const tierBadge = document.getElementById('mem-tier-badge');
     const tierNext = document.getElementById('mem-tier-next-text');
     if (tierBadge) {
@@ -904,22 +1051,22 @@ function renderMemberDashboard() {
 
     updateCheckinButtonUI();
     syncWheelLabelsUI();
-    generateMemberBarcode(currentUser.student_id || currentUser.username);
+    generateMemberBarcode(currentUser.student_id || currentUser.username || String(currentUser.id));
     renderMemberPointsGoal();
     renderMemberPromotions();
     renderMemberRewards();
     renderMemberHistory();
 }
 
-let promoSlideIndex = 0;
-let promoSlideTimer = null;
-
 function renderMemberPromotions() {
     const container = document.getElementById('member-promo-section');
     if (!container) return;
-    const activePromos = (db.promotions || []).filter(p => p.is_active);
+    const activePromos = (db.promotions || []).filter(p => Boolean(p.is_active));
 
-    if (promoSlideTimer) clearInterval(promoSlideTimer);
+    if (promoSlideTimer) {
+        clearInterval(promoSlideTimer);
+        promoSlideTimer = null;
+    }
 
     if (!activePromos.length) {
         container.innerHTML = '';
@@ -932,25 +1079,25 @@ function renderMemberPromotions() {
 
     const slidesHTML = activePromos.map(p => `
         <div class="promo-banner-card">
-            <img src="${p.image}" alt="${p.title}" onerror="this.src='https://via.placeholder.com/800x250?text=Promotion'">
+            <img src="${escapeHTML(p.image)}" alt="${escapeHTML(p.title)}" onerror="this.src='https://via.placeholder.com/800x250?text=Promotion'">
             <div class="promo-overlay">
-                <span class="promo-tag"><i class="fa-solid fa-fire"></i> ${p.badge}</span>
-                <h4>${p.title}</h4>
-                <p>${p.description}</p>
+                <span class="promo-tag"><i class="fa-solid fa-fire"></i> ${escapeHTML(p.badge)}</span>
+                <h4>${escapeHTML(p.title)}</h4>
+                <p>${escapeHTML(p.description)}</p>
             </div>
         </div>
     `).join('');
 
     const controlsHTML = activePromos.length > 1 ? `
-        <button class="promo-nav-btn promo-prev" onclick="movePromoSlide(-1)" title="ก่อนหน้า">
+        <button type="button" class="promo-nav-btn promo-prev" onclick="movePromoSlide(-1)" title="ก่อนหน้า">
             <i class="fa-solid fa-chevron-left"></i>
         </button>
-        <button class="promo-nav-btn promo-next" onclick="movePromoSlide(1)" title="ถัดไป">
+        <button type="button" class="promo-nav-btn promo-next" onclick="movePromoSlide(1)" title="ถัดไป">
             <i class="fa-solid fa-chevron-right"></i>
         </button>
         <div class="promo-dots">
             ${activePromos.map((_, idx) => `
-                <button class="promo-dot ${idx === 0 ? 'active' : ''}" onclick="goToPromoSlide(${idx})"></button>
+                <button type="button" class="promo-dot ${idx === 0 ? 'active' : ''}" onclick="goToPromoSlide(${idx})"></button>
             `).join('')}
         </div>
     ` : '';
@@ -1005,10 +1152,12 @@ function setRewardFilter(mode) {
 
 function renderMemberRewards() {
     const grid = document.getElementById('member-rewards-grid');
+    if (!grid || !currentUser) return;
     grid.innerHTML = '';
 
+    const currentPts = Number(currentUser.points) || 0;
     const filteredRewards = rewardFilterMode === 'can_redeem'
-        ? db.rewards.filter(r => currentUser.points >= r.points_required && r.stock > 0)
+        ? db.rewards.filter(r => currentPts >= Number(r.points_required) && Number(r.stock) > 0)
         : db.rewards;
 
     if (!filteredRewards.length) {
@@ -1017,26 +1166,28 @@ function renderMemberRewards() {
     }
 
     filteredRewards.forEach(reward => {
-        const canRedeem = currentUser.points >= reward.points_required && reward.stock > 0;
+        const stock = Number(reward.stock) || 0;
+        const ptsReq = Number(reward.points_required) || 0;
+        const canRedeem = currentPts >= ptsReq && stock > 0;
         let btnText = 'แลกของรางวัล';
-        if (reward.stock <= 0) btnText = 'ของรางวัลหมด';
-        else if (currentUser.points < reward.points_required) btnText = 'แต้มไม่เพียงพอ';
+        if (stock <= 0) btnText = 'ของรางวัลหมด';
+        else if (currentPts < ptsReq) btnText = 'แต้มไม่เพียงพอ';
 
         const card = document.createElement('div');
         card.className = 'reward-card';
         card.innerHTML = `
-            <img src="${reward.image}" alt="${reward.name}" class="reward-img" onerror="this.src='https://via.placeholder.com/400x200?text=Reward'">
+            <img src="${escapeHTML(reward.image)}" alt="${escapeHTML(reward.name)}" class="reward-img" onerror="this.src='https://via.placeholder.com/400x200?text=Reward'">
             <div class="reward-body">
                 <div>
-                    <span class="reward-badge"><i class="fa-solid fa-coins"></i> ใช้ ${reward.points_required} แต้ม</span>
-                    <h4 class="reward-title">${reward.name}</h4>
-                    <p class="reward-desc">${reward.description}</p>
+                    <span class="reward-badge"><i class="fa-solid fa-coins"></i> ใช้ ${ptsReq} แต้ม</span>
+                    <h4 class="reward-title">${escapeHTML(reward.name)}</h4>
+                    <p class="reward-desc">${escapeHTML(reward.description)}</p>
                 </div>
                 <div class="reward-footer">
-                    <small class="text-muted">คงเหลือ: ${reward.stock} ชิ้น</small>
-                    <button class="btn ${canRedeem ? 'btn-primary' : 'btn-outline'}" 
+                    <small class="text-muted">คงเหลือ: ${stock} ชิ้น</small>
+                    <button type="button" class="btn ${canRedeem ? 'btn-primary' : 'btn-outline'}" 
                             ${!canRedeem ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''} 
-                            onclick="redeemReward(${reward.id})">
+                            onclick="redeemReward(${Number(reward.id)})">
                         ${btnText}
                     </button>
                 </div>
@@ -1047,73 +1198,105 @@ function renderMemberRewards() {
 }
 
 async function redeemReward(rewardId) {
-    await syncFromCloud();
-    const latestUser = db.users.find(u => u.id === currentUser.id);
-    const reward = db.rewards.find(r => r.id === rewardId);
-    if (!reward || !latestUser) return;
+    if (!currentUser || isRedeeming) return;
+    isRedeeming = true;
 
-    if (reward.stock <= 0) {
-        showToast('ขออภัย ของรางวัลรายการนี้หมดแล้ว');
-        renderMemberDashboard();
-        return;
-    }
-    if (latestUser.points < reward.points_required) {
-        showToast('แต้มสะสมของคุณไม่เพียงพอ');
-        renderMemberDashboard();
-        return;
-    }
+    try {
+        const ok = await syncFromCloud();
+        if (!ok) return;
 
-    if (!confirm(`ยืนยันการใช้ ${reward.points_required} แต้ม เพื่อแลก "${reward.name}" หรือไม่?`)) {
-        return;
-    }
+        const latestUser = db.users.find(u => String(u.id) === String(currentUser.id));
+        const reward = db.rewards.find(r => String(r.id) === String(rewardId));
+        if (!reward || !latestUser) return;
 
-    const newPoints = latestUser.points - reward.points_required;
-    const newStock = reward.stock - 1;
+        const currentPts = Number(latestUser.points) || 0;
+        const stock = Number(reward.stock) || 0;
+        const ptsReq = Number(reward.points_required) || 0;
 
-    const [, , insertRes] = await Promise.all([
-        sb.from('users').update({ points: newPoints }).eq('id', latestUser.id),
-        sb.from('rewards').update({ stock: newStock }).eq('id', reward.id),
-        sb.from('redemptions').insert([{
+        if (stock <= 0) {
+            showToast('ขออภัย ของรางวัลรายการนี้หมดแล้ว');
+            renderMemberDashboard();
+            return;
+        }
+        if (currentPts < ptsReq) {
+            showToast('แต้มสะสมของคุณไม่เพียงพอ');
+            renderMemberDashboard();
+            return;
+        }
+
+        if (!confirm(`ยืนยันการใช้ ${ptsReq} แต้ม เพื่อแลก "${reward.name}" หรือไม่?`)) {
+            return;
+        }
+
+        const newPoints = currentPts - ptsReq;
+        const newStock = stock - 1;
+
+        const ptsUpd = await sb.from('users').update({ points: newPoints }).eq('id', latestUser.id);
+        if (ptsUpd.error) {
+            showToast('เกิดข้อผิดพลาดในการหักแต้ม กรุณาลองใหม่');
+            return;
+        }
+
+        const stockUpd = await sb.from('rewards').update({ stock: newStock }).eq('id', reward.id);
+        if (stockUpd.error) {
+            await sb.from('users').update({ points: currentPts }).eq('id', latestUser.id);
+            showToast('เกิดข้อผิดพลาดในการตัดสต็อก ระบบคืนแต้มให้แล้ว');
+            return;
+        }
+
+        const insertRes = await sb.from('redemptions').insert([{
             user_id: latestUser.id,
             reward_id: reward.id,
-            points_spent: reward.points_required,
+            points_spent: ptsReq,
             status: 'approved'
-        }]).select().single()
-    ]);
+        }]).select().single();
 
-    await syncFromCloud();
-    renderMemberDashboard();
-    showToast(`แลก "${reward.name}" สำเร็จ! บันทึกประวัติเรียบร้อยแล้ว`);
+        if (insertRes.error) {
+            await Promise.all([
+                sb.from('users').update({ points: currentPts }).eq('id', latestUser.id),
+                sb.from('rewards').update({ stock }).eq('id', reward.id)
+            ]);
+            showToast('บันทึกรายการแลกไม่สำเร็จ ระบบคืนแต้มและสต็อกให้แล้ว');
+            return;
+        }
 
-    if (insertRes && insertRes.data) {
-        openTicketModal(insertRes.data.id);
+        await syncFromCloud();
+        renderMemberDashboard();
+        showToast(`แลก "${reward.name}" สำเร็จ! บันทึกประวัติเรียบร้อยแล้ว`);
+
+        if (insertRes.data) {
+            openTicketModal(insertRes.data.id);
+        }
+    } finally {
+        isRedeeming = false;
     }
 }
 
 function renderMemberHistory() {
+    if (!currentUser) return;
     const earnTbody = document.getElementById('mem-earn-tbody');
-    const myEarnings = db.point_history.filter(h => h.user_id === currentUser.id);
+    const myEarnings = db.point_history.filter(h => String(h.user_id) === String(currentUser.id));
 
     earnTbody.innerHTML = myEarnings.length ? myEarnings.map(item => {
-        const pts = Number(item.points_earned);
+        const pts = Number(item.points_earned) || 0;
         const ptsDisplay = pts >= 0
             ? `<strong style="color:var(--success-green);">+${pts} แต้ม</strong>`
             : `<strong style="color:var(--danger-red);">${pts} แต้ม</strong>`;
         return `
             <tr>
                 <td>${formatDateTime(item.created_at)}</td>
-                <td>${item.note || 'ซื้อสินค้าภายในร้าน'}</td>
-                <td>${Number(item.amount).toLocaleString()} บาท</td>
+                <td>${escapeHTML(item.note || 'ซื้อสินค้าภายในร้าน')}</td>
+                <td>${(Number(item.amount) || 0).toLocaleString()} บาท</td>
                 <td>${ptsDisplay}</td>
             </tr>
         `;
     }).join('') : '<tr><td colspan="4" style="text-align:center;">ยังไม่มีประวัติการสะสมแต้ม</td></tr>';
 
     const redeemTbody = document.getElementById('mem-redeem-tbody');
-    const myRedemptions = db.redemptions.filter(r => r.user_id === currentUser.id);
+    const myRedemptions = db.redemptions.filter(r => String(r.user_id) === String(currentUser.id));
 
     redeemTbody.innerHTML = myRedemptions.length ? myRedemptions.map(item => {
-        const reward = db.rewards.find(rw => rw.id === item.reward_id);
+        const reward = db.rewards.find(rw => String(rw.id) === String(item.reward_id));
         const statusMap = {
             pending: '<span class="status-pill status-approved">แลกสำเร็จแล้ว</span>',
             approved: '<span class="status-pill status-approved">แลกสำเร็จแล้ว</span>',
@@ -1124,11 +1307,11 @@ function renderMemberHistory() {
             <tr>
                 <td><strong>${formatTicketCode(item.id)}</strong></td>
                 <td>${formatDateTime(item.created_at)}</td>
-                <td>${reward ? reward.name : 'ของรางวัลที่ถูกลบ'}</td>
-                <td>-${item.points_spent} แต้ม</td>
+                <td>${escapeHTML(reward ? reward.name : 'ของรางวัลที่ถูกลบ')}</td>
+                <td>-${Number(item.points_spent) || 0} แต้ม</td>
                 <td>${statusMap[item.status] || statusMap.approved}</td>
                 <td>
-                    <button class="btn btn-outline-sm" onclick="openTicketModal(${item.id})">
+                    <button type="button" class="btn btn-outline-sm" onclick="openTicketModal(${Number(item.id)})">
                         <i class="fa-solid fa-image"></i> ดูหลักฐาน
                     </button>
                 </td>
@@ -1171,8 +1354,8 @@ async function switchAdminTab(tabName, btnElement) {
     document.querySelectorAll('#admin-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('#admin-dashboard .tab-content').forEach(c => c.classList.remove('active'));
 
-    btnElement.classList.add('active');
-    document.getElementById(`admin-tab-${tabName}`).classList.add('active');
+    btnElement?.classList.add('active');
+    document.getElementById(`admin-tab-${tabName}`)?.classList.add('active');
 
     await syncFromCloud();
     renderAdminDashboard();
@@ -1185,9 +1368,9 @@ async function switchAdminTab(tabName, btnElement) {
 function renderAdminDashboard() {
     const members = db.users.filter(u => u.role === 'member');
     const totalPointsGiven = db.point_history
-        .filter(h => Number(h.points_earned) > 0)
-        .reduce((sum, h) => sum + Number(h.points_earned), 0);
-    const totalSales = db.point_history.reduce((sum, h) => sum + Number(h.amount), 0);
+        .filter(h => (Number(h.points_earned) || 0) > 0)
+        .reduce((sum, h) => sum + (Number(h.points_earned) || 0), 0);
+    const totalSales = db.point_history.reduce((sum, h) => sum + (Number(h.amount) || 0), 0);
 
     document.getElementById('stat-total-members').textContent = members.length.toLocaleString();
     document.getElementById('stat-total-points').textContent = totalPointsGiven.toLocaleString();
@@ -1226,13 +1409,13 @@ async function handleSaveSpinSettings(e) {
     e.preventDefault();
     const btn = document.getElementById('btn-save-spin-cfg');
     const enabled = document.getElementById('spin-cfg-enabled').value === '1';
-    const cost = Math.max(0, parseInt(document.getElementById('spin-cfg-cost').value) || 0);
+    const cost = Math.max(0, parseInt(document.getElementById('spin-cfg-cost').value, 10) || 0);
 
     const prizes = [];
     const weights = [];
     for (let i = 0; i < 6; i++) {
-        prizes.push(Math.max(0, parseInt(document.getElementById(`spin-prize-${i}`).value) || 0));
-        weights.push(Math.max(1, parseInt(document.getElementById(`spin-weight-${i}`).value) || 1));
+        prizes.push(Math.max(0, parseInt(document.getElementById(`spin-prize-${i}`).value, 10) || 0));
+        weights.push(Math.max(1, parseInt(document.getElementById(`spin-weight-${i}`).value, 10) || 1));
     }
 
     const newConfig = { enabled, cost, prizes, weights };
@@ -1264,13 +1447,13 @@ function renderPOSMemberSelect() {
     if (!datalist) return;
     const members = db.users.filter(u => u.role === 'member');
     datalist.innerHTML = members.map(m =>
-        `<option value="${m.student_id || m.username} | ${m.full_name}">มี ${m.points} แต้ม</option>`
+        `<option value="${escapeHTML(m.student_id || m.username)} | ${escapeHTML(m.full_name)}">มี ${Number(m.points) || 0} แต้ม</option>`
     ).join('');
 }
 
 function handlePOSMemberSearch(fromScannerEnter = false) {
     const searchInput = document.getElementById('pos-member-search');
-    const input = searchInput.value.trim();
+    const input = (searchInput?.value || '').trim();
     const hiddenId = document.getElementById('pos-selected-user-id');
     const statusBox = document.getElementById('pos-member-status');
 
@@ -1279,33 +1462,34 @@ function handlePOSMemberSearch(fromScannerEnter = false) {
 
     const found = db.users.find(u => {
         if (u.role !== 'member') return false;
-        const dbPhone = (u.student_id || '').replace(/\D/g, '');
+        const dbPhone = String(u.student_id || '').replace(/\D/g, '');
         return (
             (cleanDigits !== '' && dbPhone === cleanDigits) ||
-            (u.student_id && u.student_id.toLowerCase() === rawKeyword) ||
-            u.username.toLowerCase() === rawKeyword ||
+            (u.student_id && String(u.student_id).toLowerCase() === rawKeyword) ||
+            String(u.username || '').toLowerCase() === rawKeyword ||
             `${u.student_id || u.username} | ${u.full_name}`.toLowerCase() === input.toLowerCase()
         );
     });
 
     if (found) {
         hiddenId.value = found.id;
-        const tier = getMemberTierInfo(found.id, found.points);
+        const pts = Number(found.points) || 0;
+        const tier = getMemberTierInfo(found.id, pts);
         statusBox.innerHTML = `
             <div style="background: #DCFCE7; border: 1.5px solid #16A34A; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span style="font-size: 12px; color: #166534; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> พบข้อมูลสมาชิก (${tier.name})</span>
-                    <div style="font-size: 16px; font-weight: 700; color: #0F172A;">${found.full_name}</div>
-                    <small style="color: #334155;">เบอร์โทร: ${found.student_id || '-'}</small>
+                    <span style="font-size: 12px; color: #166534; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> พบข้อมูลสมาชิก (${escapeHTML(tier.name)})</span>
+                    <div style="font-size: 16px; font-weight: 700; color: #0F172A;">${escapeHTML(found.full_name)}</div>
+                    <small style="color: #334155;">เบอร์โทร: ${escapeHTML(found.student_id || '-')}</small>
                 </div>
                 <div style="text-align: right;">
                     <span style="font-size: 11px; color: #166534;">แต้มสะสม</span>
-                    <div style="font-size: 22px; font-weight: 700; color: #1E3A8A;">${found.points.toLocaleString()}</div>
+                    <div style="font-size: 22px; font-weight: 700; color: #1E3A8A;">${pts.toLocaleString()}</div>
                 </div>
             </div>
         `;
 
-        if (fromScannerEnter || (cleanDigits.length === 10 && found.student_id === cleanDigits)) {
+        if (fromScannerEnter || (cleanDigits.length === 10 && String(found.student_id).replace(/\D/g, '') === cleanDigits)) {
             searchInput.value = `${found.student_id || found.username} | ${found.full_name}`;
             const amountInput = document.getElementById('pos-amount');
             if (amountInput) {
@@ -1337,14 +1521,15 @@ function setQuickAmount(val) {
 
 function calculatePreviewPoints() {
     const amount = parseFloat(document.getElementById('pos-amount').value) || 0;
-    const rate = parseInt(db.settings.baht_per_point) || 20;
-    const earned = Math.floor(amount / rate);
+    const rate = Math.max(1, parseInt(db.settings.baht_per_point, 10) || 20);
+    const earned = amount > 0 ? Math.floor(amount / rate) : 0;
     document.getElementById('pos-preview-points').textContent = `${earned} แต้ม`;
 }
 
 async function handleRecordPurchase(e) {
     e.preventDefault();
-    const userId = parseInt(document.getElementById('pos-selected-user-id').value);
+    const btn = document.getElementById('btn-pos-submit');
+    const userId = document.getElementById('pos-selected-user-id').value;
     const amount = parseFloat(document.getElementById('pos-amount').value);
     const note = document.getElementById('pos-note').value.trim();
 
@@ -1354,39 +1539,70 @@ async function handleRecordPurchase(e) {
         return;
     }
 
-    const rate = parseInt(db.settings.baht_per_point) || 20;
-    const pointsEarned = Math.floor(amount / rate);
-    const member = db.users.find(u => u.id === userId);
-    const newPoints = member.points + pointsEarned;
+    if (!Number.isFinite(amount) || amount <= 0) {
+        showToast('กรุณากรอกยอดซื้อให้ถูกต้อง');
+        return;
+    }
 
-    await Promise.all([
-        sb.from('users').update({ points: newPoints }).eq('id', userId),
-        sb.from('point_history').insert([{
-            user_id: userId,
-            amount: amount,
-            points_earned: pointsEarned,
-            note: note || 'ซื้อสินค้าหน้าร้าน'
-        }])
-    ]);
+    if (btn) btn.disabled = true;
 
-    e.target.reset();
-    document.getElementById('pos-selected-user-id').value = '';
-    document.getElementById('pos-member-status').innerHTML = '';
-    document.getElementById('pos-preview-points').textContent = '0 แต้ม';
+    try {
+        const ok = await syncFromCloud();
+        if (!ok) return;
 
-    await syncFromCloud();
-    renderAdminDashboard();
-    showToast(`บันทึกยอดซื้อ ${amount} บาท ให้คุณ ${member.full_name} (+${pointsEarned} แต้ม)`);
+        const member = db.users.find(u => String(u.id) === String(userId));
+        if (!member) {
+            showToast('ไม่พบข้อมูลสมาชิกในระบบ');
+            return;
+        }
 
-    focusPOSBarcodeInput();
+        const rate = Math.max(1, parseInt(db.settings.baht_per_point, 10) || 20);
+        const pointsEarned = Math.floor(amount / rate);
+        const newPoints = (Number(member.points) || 0) + pointsEarned;
+
+        const [updRes, insRes] = await Promise.all([
+            sb.from('users').update({ points: newPoints }).eq('id', member.id),
+            sb.from('point_history').insert([{
+                user_id: member.id,
+                amount: amount,
+                points_earned: pointsEarned,
+                note: note || 'ซื้อสินค้าหน้าร้าน'
+            }])
+        ]);
+
+        if (updRes.error || insRes.error) {
+            showToast('เกิดข้อผิดพลาดในการบันทึกยอดซื้อ');
+            return;
+        }
+
+        e.target.reset();
+        document.getElementById('pos-selected-user-id').value = '';
+        document.getElementById('pos-member-status').innerHTML = '';
+        document.getElementById('pos-preview-points').textContent = '0 แต้ม';
+
+        await syncFromCloud();
+        renderAdminDashboard();
+        showToast(`บันทึกยอดซื้อ ${amount} บาท ให้คุณ ${member.full_name} (+${pointsEarned} แต้ม)`);
+        focusPOSBarcodeInput();
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 async function handleUpdateRate(e) {
     e.preventDefault();
-    const newRate = parseInt(document.getElementById('setting-baht-per-point').value);
-    if (newRate < 1) return;
+    const newRate = parseInt(document.getElementById('setting-baht-per-point').value, 10);
+    if (!Number.isFinite(newRate) || newRate < 1) {
+        showToast('กรุณากรอกอัตราบาทต่อแต้มตั้งแต่ 1 ขึ้นไป');
+        return;
+    }
 
-    await sb.from('settings').upsert({ setting_key: 'baht_per_point', setting_value: String(newRate) });
+    const { error } = await sb.from('settings').upsert({ setting_key: 'baht_per_point', setting_value: String(newRate) });
+    if (error) {
+        showToast('บันทึกอัตราคำนวณแต้มไม่สำเร็จ');
+        return;
+    }
+
     await syncFromCloud();
     calculatePreviewPoints();
     showToast(`อัปเดตอัตราคำนวณแต้มเป็น ทุก ${newRate} บาท = 1 แต้ม`);
@@ -1394,14 +1610,15 @@ async function handleUpdateRate(e) {
 
 function renderRecentPOS() {
     const tbody = document.getElementById('admin-recent-pos-tbody');
-    const recent = db.point_history.filter(h => Number(h.amount) > 0).slice(0, 5);
+    if (!tbody) return;
+    const recent = db.point_history.filter(h => (Number(h.amount) || 0) > 0).slice(0, 5);
     tbody.innerHTML = recent.map(item => {
-        const user = db.users.find(u => u.id === item.user_id);
+        const user = db.users.find(u => String(u.id) === String(item.user_id));
         return `
             <tr>
-                <td>${user ? user.full_name : 'ไม่พบข้อมูล'}</td>
-                <td>${Number(item.amount).toLocaleString()} ฿</td>
-                <td><strong>+${item.points_earned}</strong></td>
+                <td>${escapeHTML(user ? user.full_name : 'ไม่พบข้อมูล')}</td>
+                <td>${(Number(item.amount) || 0).toLocaleString()} ฿</td>
+                <td><strong>+${Number(item.points_earned) || 0}</strong></td>
             </tr>
         `;
     }).join('');
@@ -1410,9 +1627,10 @@ function renderRecentPOS() {
 // --- ส่วนแสดงประวัติการแลกของรางวัลอัตโนมัติ ---
 function renderAdminRedemptions() {
     const tbody = document.getElementById('admin-redemptions-tbody');
+    if (!tbody) return;
     tbody.innerHTML = db.redemptions.length ? db.redemptions.map(item => {
-        const user = db.users.find(u => u.id === item.user_id);
-        const reward = db.rewards.find(r => r.id === item.reward_id);
+        const user = db.users.find(u => String(u.id) === String(item.user_id));
+        const reward = db.rewards.find(r => String(r.id) === String(item.reward_id));
 
         const statusBadge = item.status === 'rejected'
             ? '<span class="status-pill status-rejected">ยกเลิกแล้ว</span>'
@@ -1422,9 +1640,9 @@ function renderAdminRedemptions() {
             <tr>
                 <td><strong>${formatTicketCode(item.id)}</strong></td>
                 <td>${formatDateTime(item.created_at)}</td>
-                <td>${user ? `${user.full_name} (${user.student_id || '-'})` : 'ไม่พบสมาชิก'}</td>
-                <td>${reward ? reward.name : 'ไม่พบของรางวัล'}</td>
-                <td>${item.points_spent} แต้ม</td>
+                <td>${user ? `${escapeHTML(user.full_name)} (${escapeHTML(user.student_id || '-')})` : 'ไม่พบสมาชิก'}</td>
+                <td>${escapeHTML(reward ? reward.name : 'ไม่พบของรางวัล')}</td>
+                <td>${Number(item.points_spent) || 0} แต้ม</td>
                 <td>${statusBadge}</td>
             </tr>
         `;
@@ -1448,19 +1666,19 @@ function setupImageDropzone(prefix) {
     dropzone.ondrop = (e) => {
         e.preventDefault();
         dropzone.classList.remove('dragover');
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
             processUploadedImage(e.dataTransfer.files[0], prefix);
         }
     };
     fileInput.onchange = (e) => {
-        if (e.target.files && e.target.files[0]) {
+        if (e.target && e.target.files && e.target.files[0]) {
             processUploadedImage(e.target.files[0], prefix);
         }
     };
 }
 
 function processUploadedImage(file, prefix) {
-    if (!file.type.startsWith('image/')) {
+    if (!file.type || !file.type.startsWith('image/')) {
         showToast('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
         return;
     }
@@ -1479,7 +1697,9 @@ function processUploadedImage(file, prefix) {
             }
             canvas.width = width;
             canvas.height = height;
-            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.drawImage(img, 0, 0, width, height);
 
             const compressed = canvas.toDataURL('image/jpeg', 0.8);
             setDropzonePreview(prefix, compressed);
@@ -1512,18 +1732,18 @@ function renderAdminPromotions() {
     if (!grid) return;
     grid.innerHTML = (db.promotions || []).map(p => `
         <div class="reward-card" style="${!p.is_active ? 'opacity:0.6;' : ''}">
-            <img src="${p.image}" alt="${p.title}" class="reward-img" onerror="this.src='https://via.placeholder.com/400x200?text=Banner'">
+            <img src="${escapeHTML(p.image)}" alt="${escapeHTML(p.title)}" class="reward-img" onerror="this.src='https://via.placeholder.com/400x200?text=Banner'">
             <div class="reward-body">
                 <div>
-                    <span class="reward-badge">${p.badge} | ${p.is_active ? 'กำลังแสดง' : 'ซ่อนอยู่'}</span>
-                    <h4 class="reward-title">${p.title}</h4>
-                    <p class="reward-desc">${p.description}</p>
+                    <span class="reward-badge">${escapeHTML(p.badge)} | ${p.is_active ? 'กำลังแสดง' : 'ซ่อนอยู่'}</span>
+                    <h4 class="reward-title">${escapeHTML(p.title)}</h4>
+                    <p class="reward-desc">${escapeHTML(p.description)}</p>
                 </div>
                 <div class="reward-footer">
-                    <button class="btn btn-outline-sm" onclick="openPromoModal(${p.id})">
+                    <button type="button" class="btn btn-outline-sm" onclick="openPromoModal(${Number(p.id)})">
                         <i class="fa-solid fa-pen"></i> แก้ไข
                     </button>
-                    <button class="btn btn-danger" onclick="deletePromotion(${p.id})">
+                    <button type="button" class="btn btn-danger" onclick="deletePromotion(${Number(p.id)})">
                         <i class="fa-solid fa-trash"></i> ลบ
                     </button>
                 </div>
@@ -1538,7 +1758,8 @@ function openPromoModal(promoId = null) {
     setupImageDropzone('promo');
 
     if (promoId) {
-        const p = db.promotions.find(item => item.id === promoId);
+        const p = db.promotions.find(item => String(item.id) === String(promoId));
+        if (!p) return;
         title.textContent = 'แก้ไขแบนเนอร์โปรโมชั่น';
         document.getElementById('edit-promo-id').value = p.id;
         document.getElementById('modal-promo-badge').value = p.badge;
@@ -1555,11 +1776,12 @@ function openPromoModal(promoId = null) {
         document.getElementById('modal-promo-active').value = '1';
         setDropzonePreview('promo', '');
     }
-    modal.classList.remove('hidden');
+    modal?.classList.remove('hidden');
 }
 
 async function savePromotion(e) {
     e.preventDefault();
+    const btn = document.getElementById('btn-save-promo');
     const id = document.getElementById('edit-promo-id').value;
     const badge = document.getElementById('modal-promo-badge').value.trim();
     const title = document.getElementById('modal-promo-title').value.trim();
@@ -1572,22 +1794,40 @@ async function savePromotion(e) {
         return;
     }
 
-    if (id) {
-        await sb.from('promotions').update({ badge, title, description, image, is_active }).eq('id', parseInt(id));
-        showToast('อัปเดตแบนเนอร์โปรโมชั่นเรียบร้อยแล้ว');
-    } else {
-        await sb.from('promotions').insert([{ badge, title, description, image, is_active }]);
-        showToast('เพิ่มแบนเนอร์โปรโมชั่นใหม่เรียบร้อยแล้ว');
-    }
+    if (btn) btn.disabled = true;
 
-    closeModal('promo-modal');
-    await syncFromCloud();
-    renderAdminDashboard();
+    try {
+        if (id) {
+            const { error } = await sb.from('promotions').update({ badge, title, description, image, is_active }).eq('id', parseInt(id, 10));
+            if (error) {
+                showToast('อัปเดตแบนเนอร์ไม่สำเร็จ');
+                return;
+            }
+            showToast('อัปเดตแบนเนอร์โปรโมชั่นเรียบร้อยแล้ว');
+        } else {
+            const { error } = await sb.from('promotions').insert([{ badge, title, description, image, is_active }]);
+            if (error) {
+                showToast('เพิ่มแบนเนอร์ไม่สำเร็จ');
+                return;
+            }
+            showToast('เพิ่มแบนเนอร์โปรโมชั่นใหม่เรียบร้อยแล้ว');
+        }
+
+        closeModal('promo-modal');
+        await syncFromCloud();
+        renderAdminDashboard();
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 async function deletePromotion(promoId) {
     if (!confirm('ยืนยันการลบแบนเนอร์โปรโมชั่นนี้หรือไม่?')) return;
-    await sb.from('promotions').delete().eq('id', promoId);
+    const { error } = await sb.from('promotions').delete().eq('id', promoId);
+    if (error) {
+        showToast('ลบแบนเนอร์ไม่สำเร็จ');
+        return;
+    }
     await syncFromCloud();
     renderAdminDashboard();
     showToast('ลบแบนเนอร์โปรโมชั่นเรียบร้อยแล้ว');
@@ -1595,29 +1835,31 @@ async function deletePromotion(promoId) {
 
 // --- ส่วนจัดการสมาชิก (CRUD + Audit Log บันทึกประวัติแก้แต้ม) ---
 function renderAdminMembers() {
-    const keyword = document.getElementById('member-search').value.toLowerCase().trim();
+    const keyword = (document.getElementById('member-search')?.value || '').toLowerCase().trim();
     const tbody = document.getElementById('admin-members-tbody');
+    if (!tbody) return;
 
     const members = db.users.filter(u =>
         u.role === 'member' &&
-        (u.full_name.toLowerCase().includes(keyword) ||
-         (u.student_id && u.student_id.toLowerCase().includes(keyword)) ||
-         u.username.toLowerCase().includes(keyword))
+        (String(u.full_name || '').toLowerCase().includes(keyword) ||
+         (u.student_id && String(u.student_id).toLowerCase().includes(keyword)) ||
+         String(u.username || '').toLowerCase().includes(keyword))
     );
 
     tbody.innerHTML = members.length ? members.map(m => {
-        const tier = getMemberTierInfo(m.id, m.points);
+        const pts = Number(m.points) || 0;
+        const tier = getMemberTierInfo(m.id, pts);
         return `
             <tr>
-                <td>${m.student_id || '-'}</td>
-                <td>${m.full_name}</td>
-                <td><span class="tier-pill ${tier.cssClass}">${tier.name}</span></td>
-                <td><strong>${m.points.toLocaleString()}</strong> แต้ม</td>
+                <td>${escapeHTML(m.student_id || '-')}</td>
+                <td>${escapeHTML(m.full_name)}</td>
+                <td><span class="tier-pill ${tier.cssClass}">${escapeHTML(tier.name)}</span></td>
+                <td><strong>${pts.toLocaleString()}</strong> แต้ม</td>
                 <td>
-                    <button class="btn btn-outline-sm" onclick="openMemberModal(${m.id})">
+                    <button type="button" class="btn btn-outline-sm" onclick="openMemberModal(${Number(m.id)})">
                         <i class="fa-solid fa-pen"></i> แก้ไข
                     </button>
-                    <button class="btn btn-danger" onclick="deleteMember(${m.id})">
+                    <button type="button" class="btn btn-danger" onclick="deleteMember(${Number(m.id)})">
                         <i class="fa-solid fa-trash"></i> ลบ
                     </button>
                 </td>
@@ -1633,13 +1875,14 @@ function openMemberModal(memberId = null) {
     const reasonInput = document.getElementById('modal-mem-reason');
 
     if (memberId) {
-        const m = db.users.find(u => u.id === memberId);
+        const m = db.users.find(u => String(u.id) === String(memberId));
+        if (!m) return;
         title.textContent = 'แก้ไขข้อมูลสมาชิก';
         document.getElementById('edit-member-id').value = m.id;
         document.getElementById('modal-mem-studentid').value = m.student_id || '';
         document.getElementById('modal-mem-fullname').value = m.full_name;
         document.getElementById('modal-mem-password').value = m.password;
-        document.getElementById('modal-mem-points').value = m.points;
+        document.getElementById('modal-mem-points').value = Number(m.points) || 0;
         if (reasonGroup) reasonGroup.style.display = 'block';
         if (reasonInput) reasonInput.value = '';
     } else {
@@ -1651,112 +1894,129 @@ function openMemberModal(memberId = null) {
         document.getElementById('modal-mem-points').value = 0;
         if (reasonGroup) reasonGroup.style.display = 'none';
     }
-    modal.classList.remove('hidden');
+    modal?.classList.remove('hidden');
 }
 
 async function saveMember(e) {
     e.preventDefault();
+    const btn = document.getElementById('btn-save-member');
     const id = document.getElementById('edit-member-id').value;
     const phone = document.getElementById('modal-mem-studentid').value.replace(/\D/g, '');
     const fullName = document.getElementById('modal-mem-fullname').value.trim().replace(/\s+/g, ' ');
     const username = fullName;
     const password = document.getElementById('modal-mem-password').value.trim();
-    const points = parseInt(document.getElementById('modal-mem-points').value) || 0;
+    const rawPoints = parseInt(document.getElementById('modal-mem-points').value, 10);
+    const points = Math.max(0, Number.isFinite(rawPoints) ? rawPoints : 0);
     const reason = (document.getElementById('modal-mem-reason')?.value || '').trim();
+
+    if (!fullName) {
+        showToast('กรุณากรอกชื่อ-นามสกุล');
+        return;
+    }
 
     if (phone.length < 9 || phone.length > 10) {
         showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
         return;
     }
 
-    await syncFromCloud();
-    const currentId = id ? parseInt(id) : null;
+    if (btn) btn.disabled = true;
 
-    const isNameDuplicate = db.users.some(u =>
-        u.id !== currentId &&
-        ((u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase()) ||
-         (u.full_name && u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()))
-    );
+    try {
+        const ok = await syncFromCloud();
+        if (!ok) return;
 
-    if (isNameDuplicate) {
-        showToast('ไม่สามารถบันทึกได้: ชื่อ-นามสกุลนี้ซ้ำกับสมาชิกอื่นในระบบ');
-        return;
-    }
+        const isNameDuplicate = db.users.some(u =>
+            String(u.id) !== String(id) &&
+            ((u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase()) ||
+             (u.full_name && u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()))
+        );
 
-    const isPhoneDuplicate = db.users.some(u =>
-        u.id !== currentId &&
-        (u.student_id && u.student_id.replace(/\D/g, '') === phone)
-    );
-
-    if (isPhoneDuplicate) {
-        showToast('ไม่สามารถบันทึกได้: เบอร์โทรศัพท์นี้ซ้ำกับสมาชิกอื่นในระบบ');
-        return;
-    }
-
-    if (currentId) {
-        const oldMember = db.users.find(u => u.id === currentId);
-        const oldPoints = oldMember ? Number(oldMember.points) : 0;
-        const pointDiff = points - oldPoints;
-
-        const { error } = await sb.from('users').update({
-            student_id: phone,
-            full_name: fullName,
-            username,
-            password,
-            points
-        }).eq('id', currentId);
-
-        if (error) {
-            showToast('เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
+        if (isNameDuplicate) {
+            showToast('ไม่สามารถบันทึกได้: ชื่อ-นามสกุลนี้ซ้ำกับสมาชิกอื่นในระบบ');
             return;
         }
 
-        if (pointDiff !== 0) {
-            const sign = pointDiff > 0 ? `+${pointDiff}` : `${pointDiff}`;
-            await sb.from('point_history').insert([{
-                user_id: currentId,
-                amount: 0,
-                points_earned: pointDiff,
-                note: `[แอดมินปรับแต้ม ${sign} แต้ม (${oldPoints}→${points})] ${reason || 'แก้ไขผ่านหน้าจัดการสมาชิก'}`
-            }]);
-        }
+        const isPhoneDuplicate = db.users.some(u =>
+            String(u.id) !== String(id) &&
+            (u.student_id && String(u.student_id).replace(/\D/g, '') === phone)
+        );
 
-        showToast('แก้ไขข้อมูลสมาชิกเรียบร้อยแล้ว');
-    } else {
-        const { data: inserted, error } = await sb.from('users').insert([{
-            student_id: phone,
-            full_name: fullName,
-            username,
-            password,
-            role: 'member',
-            points
-        }]).select().single();
-
-        if (error) {
-            showToast('เกิดข้อผิดพลาดในการเพิ่มสมาชิก');
+        if (isPhoneDuplicate) {
+            showToast('ไม่สามารถบันทึกได้: เบอร์โทรศัพท์นี้ซ้ำกับสมาชิกอื่นในระบบ');
             return;
         }
 
-        if (inserted && points > 0) {
-            await sb.from('point_history').insert([{
-                user_id: inserted.id,
-                amount: 0,
-                points_earned: points,
-                note: `[แอดมินปรับแต้ม +${points} แต้ม] เพิ่มสมาชิกใหม่พร้อมแต้มเริ่มต้น`
-            }]);
+        if (id) {
+            const oldMember = db.users.find(u => String(u.id) === String(id));
+            const oldPoints = oldMember ? (Number(oldMember.points) || 0) : 0;
+            const pointDiff = points - oldPoints;
+
+            const { error } = await sb.from('users').update({
+                student_id: phone,
+                full_name: fullName,
+                username,
+                password,
+                points
+            }).eq('id', oldMember ? oldMember.id : id);
+
+            if (error) {
+                showToast('เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
+                return;
+            }
+
+            if (pointDiff !== 0) {
+                const sign = pointDiff > 0 ? `+${pointDiff}` : `${pointDiff}`;
+                await sb.from('point_history').insert([{
+                    user_id: oldMember ? oldMember.id : id,
+                    amount: 0,
+                    points_earned: pointDiff,
+                    note: `[แอดมินปรับแต้ม ${sign} แต้ม (${oldPoints}→${points})] ${reason || 'แก้ไขผ่านหน้าจัดการสมาชิก'}`
+                }]);
+            }
+
+            showToast('แก้ไขข้อมูลสมาชิกเรียบร้อยแล้ว');
+        } else {
+            const { data: inserted, error } = await sb.from('users').insert([{
+                student_id: phone,
+                full_name: fullName,
+                username,
+                password,
+                role: 'member',
+                points
+            }]).select().single();
+
+            if (error) {
+                showToast('เกิดข้อผิดพลาดในการเพิ่มสมาชิก');
+                return;
+            }
+
+            if (inserted && points > 0) {
+                await sb.from('point_history').insert([{
+                    user_id: inserted.id,
+                    amount: 0,
+                    points_earned: points,
+                    note: `[แอดมินปรับแต้ม +${points} แต้ม] เพิ่มสมาชิกใหม่พร้อมแต้มเริ่มต้น`
+                }]);
+            }
+
+            showToast('เพิ่มสมาชิกใหม่เรียบร้อยแล้ว');
         }
 
-        showToast('เพิ่มสมาชิกใหม่เรียบร้อยแล้ว');
+        closeModal('member-modal');
+        await syncFromCloud();
+        renderAdminDashboard();
+    } finally {
+        if (btn) btn.disabled = false;
     }
-
-    closeModal('member-modal');
-    await syncFromCloud();
-    renderAdminDashboard();
 }
 
 async function deleteMember(memberId) {
     if (!confirm('ยืนยันการลบสมาชิกคนนี้หรือไม่? ประวัติที่เกี่ยวข้องจะถูกลบทั้งหมด')) return;
-    await sb.from('users').delete().eq('id', memberId);
+    const { error } = await sb.from('users').delete().eq('id', memberId);
+    if (error) {
+        showToast('ลบข้อมูลสมาชิกไม่สำเร็จ');
+        return;
+    }
     await syncFromCloud();
     renderAdminDashboard();
     showToast('ลบข้อมูลสมาชิกเรียบร้อยแล้ว');
@@ -1765,20 +2025,21 @@ async function deleteMember(memberId) {
 // --- ส่วนจัดการของรางวัล (CRUD) ---
 function renderAdminRewards() {
     const grid = document.getElementById('admin-rewards-grid');
+    if (!grid) return;
     grid.innerHTML = db.rewards.map(r => `
         <div class="reward-card">
-            <img src="${r.image}" alt="${r.name}" class="reward-img" onerror="this.src='https://via.placeholder.com/400x200?text=Reward'">
+            <img src="${escapeHTML(r.image)}" alt="${escapeHTML(r.name)}" class="reward-img" onerror="this.src='https://via.placeholder.com/400x200?text=Reward'">
             <div class="reward-body">
                 <div>
-                    <span class="reward-badge">${r.points_required} แต้ม | คงเหลือ ${r.stock} ชิ้น</span>
-                    <h4 class="reward-title">${r.name}</h4>
-                    <p class="reward-desc">${r.description}</p>
+                    <span class="reward-badge">${Number(r.points_required) || 0} แต้ม | คงเหลือ ${Number(r.stock) || 0} ชิ้น</span>
+                    <h4 class="reward-title">${escapeHTML(r.name)}</h4>
+                    <p class="reward-desc">${escapeHTML(r.description)}</p>
                 </div>
                 <div class="reward-footer">
-                    <button class="btn btn-outline-sm" onclick="openRewardModal(${r.id})">
+                    <button type="button" class="btn btn-outline-sm" onclick="openRewardModal(${Number(r.id)})">
                         <i class="fa-solid fa-pen"></i> แก้ไข
                     </button>
-                    <button class="btn btn-danger" onclick="deleteReward(${r.id})">
+                    <button type="button" class="btn btn-danger" onclick="deleteReward(${Number(r.id)})">
                         <i class="fa-solid fa-trash"></i> ลบ
                     </button>
                 </div>
@@ -1793,7 +2054,8 @@ function openRewardModal(rewardId = null) {
     setupImageDropzone('rew');
 
     if (rewardId) {
-        const r = db.rewards.find(rw => rw.id === rewardId);
+        const r = db.rewards.find(rw => String(rw.id) === String(rewardId));
+        if (!r) return;
         title.textContent = 'แก้ไขรายการของรางวัล';
         document.getElementById('edit-reward-id').value = r.id;
         document.getElementById('modal-rew-name').value = r.name;
@@ -1810,16 +2072,17 @@ function openRewardModal(rewardId = null) {
         document.getElementById('modal-rew-stock').value = 10;
         setDropzonePreview('rew', '');
     }
-    modal.classList.remove('hidden');
+    modal?.classList.remove('hidden');
 }
 
 async function saveReward(e) {
     e.preventDefault();
+    const btn = document.getElementById('btn-save-reward');
     const id = document.getElementById('edit-reward-id').value;
     const name = document.getElementById('modal-rew-name').value.trim();
     const description = document.getElementById('modal-rew-desc').value.trim();
-    const pointsRequired = parseInt(document.getElementById('modal-rew-points').value);
-    const stock = parseInt(document.getElementById('modal-rew-stock').value);
+    const pointsRequired = Math.max(1, parseInt(document.getElementById('modal-rew-points').value, 10) || 1);
+    const stock = Math.max(0, parseInt(document.getElementById('modal-rew-stock').value, 10) || 0);
     const image = document.getElementById('modal-rew-image').value.trim();
 
     if (!image) {
@@ -1827,34 +2090,52 @@ async function saveReward(e) {
         return;
     }
 
-    if (id) {
-        await sb.from('rewards').update({
-            name,
-            description,
-            points_required: pointsRequired,
-            stock,
-            image
-        }).eq('id', parseInt(id));
-        showToast('แก้ไขข้อมูลของรางวัลเรียบร้อยแล้ว');
-    } else {
-        await sb.from('rewards').insert([{
-            name,
-            description,
-            points_required: pointsRequired,
-            stock,
-            image
-        }]);
-        showToast('เพิ่มของรางวัลใหม่เรียบร้อยแล้ว');
-    }
+    if (btn) btn.disabled = true;
 
-    closeModal('reward-modal');
-    await syncFromCloud();
-    renderAdminDashboard();
+    try {
+        if (id) {
+            const { error } = await sb.from('rewards').update({
+                name,
+                description,
+                points_required: pointsRequired,
+                stock,
+                image
+            }).eq('id', parseInt(id, 10));
+            if (error) {
+                showToast('แก้ไขข้อมูลของรางวัลไม่สำเร็จ');
+                return;
+            }
+            showToast('แก้ไขข้อมูลของรางวัลเรียบร้อยแล้ว');
+        } else {
+            const { error } = await sb.from('rewards').insert([{
+                name,
+                description,
+                points_required: pointsRequired,
+                stock,
+                image
+            }]);
+            if (error) {
+                showToast('เพิ่มของรางวัลไม่สำเร็จ');
+                return;
+            }
+            showToast('เพิ่มของรางวัลใหม่เรียบร้อยแล้ว');
+        }
+
+        closeModal('reward-modal');
+        await syncFromCloud();
+        renderAdminDashboard();
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 async function deleteReward(rewardId) {
     if (!confirm('ยืนยันการลบของรางวัลรายการนี้หรือไม่?')) return;
-    await sb.from('rewards').delete().eq('id', rewardId);
+    const { error } = await sb.from('rewards').delete().eq('id', rewardId);
+    if (error) {
+        showToast('ลบของรางวัลไม่สำเร็จ (อาจมีประวัติการแลกอ้างอิงอยู่)');
+        return;
+    }
     await syncFromCloud();
     renderAdminDashboard();
     showToast('ลบของรางวัลเรียบร้อยแล้ว');
@@ -1880,10 +2161,11 @@ function isInSelectedPeriod(isoString) {
 
     const now = new Date();
     if (reportPeriod === 'today') {
-        return getLocalDateKey(isoString) === getLocalDateKey();
+        return getLocalDateKey(isoString) === getLocalDateKey(now.toISOString());
     } else if (reportPeriod === 'week') {
-        const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
-        return d >= sevenDaysAgo;
+        const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        return d >= sevenDaysAgo && d <= endOfToday;
     } else if (reportPeriod === 'month') {
         return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     }
@@ -1892,6 +2174,8 @@ function isInSelectedPeriod(isoString) {
 
 function renderAdminReports() {
     const container = document.getElementById('report-summary-content');
+    if (!container) return;
+
     const periodNames = {
         today: 'วันนี้',
         week: '7 วันล่าสุด',
@@ -1902,18 +2186,18 @@ function renderAdminReports() {
     const filteredHistory = db.point_history.filter(h => isInSelectedPeriod(h.created_at));
     const filteredRedemptions = db.redemptions.filter(r => isInSelectedPeriod(r.created_at));
 
-    const periodSales = filteredHistory.reduce((sum, h) => sum + Number(h.amount), 0);
-    const periodOrders = filteredHistory.filter(h => Number(h.amount) > 0).length;
+    const periodSales = filteredHistory.reduce((sum, h) => sum + (Number(h.amount) || 0), 0);
+    const periodOrders = filteredHistory.filter(h => (Number(h.amount) || 0) > 0).length;
     const periodPointsGiven = filteredHistory
-        .filter(h => Number(h.points_earned) > 0)
-        .reduce((sum, h) => sum + Number(h.points_earned), 0);
+        .filter(h => (Number(h.points_earned) || 0) > 0)
+        .reduce((sum, h) => sum + (Number(h.points_earned) || 0), 0);
     const periodRedeemedCount = filteredRedemptions.length;
 
     const members = db.users.filter(u => u.role === 'member');
-    const topMembers = [...members].sort((a, b) => b.points - a.points).slice(0, 5);
+    const topMembers = [...members].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0)).slice(0, 5);
 
     const auditLogs = db.point_history
-        .filter(h => h.note && h.note.startsWith('[แอดมินปรับแต้ม'))
+        .filter(h => h.note && String(h.note).startsWith('[แอดมินปรับแต้ม'))
         .slice(0, 15);
 
     container.innerHTML = `
@@ -1950,14 +2234,15 @@ function renderAdminReports() {
                     </thead>
                     <tbody>
                         ${topMembers.map((m, idx) => {
-                            const tier = getMemberTierInfo(m.id, m.points);
+                            const pts = Number(m.points) || 0;
+                            const tier = getMemberTierInfo(m.id, pts);
                             return `
                                 <tr>
                                     <td>#${idx + 1}</td>
-                                    <td>${m.student_id || '-'}</td>
-                                    <td>${m.full_name}</td>
-                                    <td><span class="tier-pill ${tier.cssClass}">${tier.name}</span></td>
-                                    <td><strong>${m.points.toLocaleString()} แต้ม</strong></td>
+                                    <td>${escapeHTML(m.student_id || '-')}</td>
+                                    <td>${escapeHTML(m.full_name)}</td>
+                                    <td><span class="tier-pill ${tier.cssClass}">${escapeHTML(tier.name)}</span></td>
+                                    <td><strong>${pts.toLocaleString()} แต้ม</strong></td>
                                 </tr>
                             `;
                         }).join('')}
@@ -1980,14 +2265,14 @@ function renderAdminReports() {
                     </thead>
                     <tbody>
                         ${auditLogs.length ? auditLogs.map(log => {
-                            const user = db.users.find(u => u.id === log.user_id);
-                            const pts = Number(log.points_earned);
+                            const user = db.users.find(u => String(u.id) === String(log.user_id));
+                            const pts = Number(log.points_earned) || 0;
                             return `
                                 <tr>
                                     <td>${formatDateTime(log.created_at)}</td>
-                                    <td>${user ? `${user.full_name} (${user.student_id || '-'})` : 'ไม่พบสมาชิก'}</td>
+                                    <td>${user ? `${escapeHTML(user.full_name)} (${escapeHTML(user.student_id || '-')})` : 'ไม่พบสมาชิก'}</td>
                                     <td><strong style="color: ${pts >= 0 ? 'var(--success-green)' : 'var(--danger-red)'};">${pts >= 0 ? '+' + pts : pts} แต้ม</strong></td>
-                                    <td>${log.note}</td>
+                                    <td>${escapeHTML(log.note)}</td>
                                 </tr>
                             `;
                         }).join('') : '<tr><td colspan="4" style="text-align:center; color: var(--text-muted);">ยังไม่มีประวัติการแก้ไขแต้มด้วยมือ</td></tr>'}
@@ -2001,8 +2286,11 @@ function renderAdminReports() {
 function exportReportCSV() {
     let csv = '\uFEFFเบอร์โทรศัพท์,ชื่อ-นามสกุล,ระดับสมาชิก,แต้มสะสมปัจจุบัน\n';
     db.users.filter(u => u.role === 'member').forEach(m => {
-        const tier = getMemberTierInfo(m.id, m.points);
-        csv += `"${m.student_id || '-'}","${m.full_name}","${tier.name}",${m.points}\n`;
+        const pts = Number(m.points) || 0;
+        const tier = getMemberTierInfo(m.id, pts);
+        const safeName = String(m.full_name || '').replace(/"/g, '""');
+        const safePhone = String(m.student_id || '-').replace(/"/g, '""');
+        csv += `"${safePhone}","${safeName}","${tier.name}",${pts}\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -2016,14 +2304,25 @@ function exportReportCSV() {
 }
 
 function closeModal(modalId) {
-    document.getElementById(modalId).classList.add('hidden');
+    document.getElementById(modalId)?.classList.add('hidden');
 }
+
+// ปิด Modal เมื่อกดปุ่ม ESC หรือคลิกพื้นที่สีดำด้านนอกกรอบ Modal
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.modal:not(.hidden)').forEach(m => m.classList.add('hidden'));
+    }
+});
+
+document.addEventListener('click', (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains('modal')) {
+        e.target.classList.add('hidden');
+    }
+});
 
 // ==========================================================
 // ระบบซิงก์ข้อมูลอัตโนมัติแบบเรียลไทม์ (Supabase Realtime)
 // ==========================================================
-let realtimeChannel = null;
-
 function startRealtimeSync() {
     if (realtimeChannel) return;
 
@@ -2031,15 +2330,15 @@ function startRealtimeSync() {
         .on('postgres_changes', { event: '*', schema: 'public' }, async (payload) => {
             if (!currentUser) return;
 
-            const oldPoints = currentUser.points;
+            const oldPoints = Number(currentUser.points) || 0;
             const ok = await syncFromCloud();
             if (!ok) return;
 
             if (currentUser.role === 'admin') {
                 renderAdminDashboard();
                 if (payload.table === 'redemptions' && payload.eventType === 'INSERT' && payload.new) {
-                    const buyer = db.users.find(u => u.id === payload.new.user_id);
-                    const rw = db.rewards.find(r => r.id === payload.new.reward_id);
+                    const buyer = db.users.find(u => String(u.id) === String(payload.new.user_id));
+                    const rw = db.rewards.find(r => String(r.id) === String(payload.new.reward_id));
 
                     const imgEl = document.getElementById('admin-alert-reward-img');
                     if (imgEl) {
@@ -2056,25 +2355,29 @@ function startRealtimeSync() {
                     if (alertModal) alertModal.classList.remove('hidden');
 
                     try {
-                        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                        const osc = ctx.createOscillator();
-                        const gain = ctx.createGain();
-                        osc.type = 'sine';
-                        osc.frequency.setValueAtTime(880, ctx.currentTime);
-                        osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.15);
-                        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-                        osc.connect(gain);
-                        gain.connect(ctx.destination);
-                        osc.start();
-                        osc.stop(ctx.currentTime + 0.4);
+                        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        if (AudioCtx) {
+                            const ctx = new AudioCtx();
+                            const osc = ctx.createOscillator();
+                            const gain = ctx.createGain();
+                            osc.type = 'sine';
+                            osc.frequency.setValueAtTime(880, ctx.currentTime);
+                            osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.15);
+                            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+                            osc.connect(gain);
+                            gain.connect(ctx.destination);
+                            osc.start();
+                            osc.stop(ctx.currentTime + 0.4);
+                        }
                     } catch (e) {}
                 }
             } else {
                 renderMemberDashboard();
-                const updatedUser = db.users.find(u => u.id === currentUser.id);
-                if (updatedUser && updatedUser.points > oldPoints) {
-                    const diff = updatedUser.points - oldPoints;
+                const updatedUser = db.users.find(u => String(u.id) === String(currentUser.id));
+                const newPts = updatedUser ? (Number(updatedUser.points) || 0) : oldPoints;
+                if (updatedUser && newPts > oldPoints) {
+                    const diff = newPts - oldPoints;
                     showToast(`คุณได้รับเพิ่ม +${diff} แต้ม!`);
                 }
             }
