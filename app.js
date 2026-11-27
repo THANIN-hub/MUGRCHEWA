@@ -177,7 +177,7 @@ function getLocalDateKey(isoString) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// คำนวณระดับสมาชิก (Member Tier) จากยอดแต้มสะสมรวม
+// คำนวณระดับสมาชิก (Member Tier) 4 ระดับ: MEMBER (0) -> SILVER (50) -> GOLD (150) -> PLATINUM (300)
 function getMemberTierInfo(userId, currentPoints = 0) {
     const earnedSum = db.point_history
         .filter(h => String(h.user_id) === String(userId) && Number(h.points_earned) > 0)
@@ -185,14 +185,42 @@ function getMemberTierInfo(userId, currentPoints = 0) {
 
     const lifetimePoints = Math.max(earnedSum, Number(currentPoints) || 0);
 
-    if (lifetimePoints >= 150) {
+    let barPercent = 0;
+    if (lifetimePoints >= 300) {
+        barPercent = 100;
+    } else if (lifetimePoints >= 150) {
+        barPercent = 66.66 + ((lifetimePoints - 150) / 150) * 33.34;
+    } else if (lifetimePoints >= 50) {
+        barPercent = 33.33 + ((lifetimePoints - 50) / 100) * 33.33;
+    } else {
+        barPercent = (lifetimePoints / 50) * 33.33;
+    }
+    barPercent = Math.max(0, Math.min(100, Math.round(barPercent)));
+
+    if (lifetimePoints >= 300) {
+        return {
+            name: 'PLATINUM',
+            label: 'ระดับ PLATINUM',
+            cssClass: 'tier-platinum',
+            fillClass: 'fill-platinum',
+            icon: 'fa-gem',
+            lifetimePoints,
+            barPercent: 100,
+            nextText: `ระดับสูงสุด PLATINUM (สะสมรวม ${lifetimePoints} แต้ม)`,
+            goalShortText: `ถึงระดับสูงสุด PLATINUM แล้ว (${lifetimePoints} แต้ม)`
+        };
+    } else if (lifetimePoints >= 150) {
+        const diff = 300 - lifetimePoints;
         return {
             name: 'GOLD',
             label: 'ระดับ GOLD',
             cssClass: 'tier-gold',
+            fillClass: 'fill-gold',
             icon: 'fa-crown',
             lifetimePoints,
-            nextText: `ระดับสูงสุดแล้ว (สะสมรวม ${lifetimePoints} แต้ม)`
+            barPercent,
+            nextText: `อีก ${diff} แต้ม ขึ้นระดับ PLATINUM`,
+            goalShortText: `อีก ${diff} แต้ม ➔ PLATINUM`
         };
     } else if (lifetimePoints >= 50) {
         const diff = 150 - lifetimePoints;
@@ -200,9 +228,12 @@ function getMemberTierInfo(userId, currentPoints = 0) {
             name: 'SILVER',
             label: 'ระดับ SILVER',
             cssClass: 'tier-silver',
+            fillClass: 'fill-silver',
             icon: 'fa-award',
             lifetimePoints,
-            nextText: `อีก ${diff} แต้ม ขึ้นระดับ GOLD`
+            barPercent,
+            nextText: `อีก ${diff} แต้ม ขึ้นระดับ GOLD`,
+            goalShortText: `อีก ${diff} แต้ม ➔ GOLD`
         };
     } else {
         const diff = 50 - lifetimePoints;
@@ -210,9 +241,12 @@ function getMemberTierInfo(userId, currentPoints = 0) {
             name: 'MEMBER',
             label: 'ระดับ MEMBER',
             cssClass: 'tier-member',
+            fillClass: '',
             icon: 'fa-medal',
             lifetimePoints,
-            nextText: `อีก ${diff} แต้ม ขึ้นระดับ SILVER`
+            barPercent,
+            nextText: `อีก ${diff} แต้ม ขึ้นระดับ SILVER`,
+            goalShortText: `อีก ${diff} แต้ม ➔ SILVER`
         };
     }
 }

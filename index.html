@@ -157,7 +157,7 @@
                     </div>
                 </div>
 
-                <!-- กล่องแสดงแต้มสะสมสีเหลืองเด่นชัด + แถบเป้าหมาย + กิจกรรมรายวัน -->
+                <!-- กล่องแสดงแต้มสะสมสีเหลืองเด่นชัด + หลอดแบ่งระดับ Rank + กิจกรรมรายวัน -->
                 <div class="points-highlight-card" style="flex-direction: column; align-items: stretch; justify-content: center; gap: 14px;">
                     <div style="display: flex; align-items: center; gap: 18px;">
                         <div class="points-icon">
@@ -169,15 +169,42 @@
                             <p id="mem-rate-info">ทุกยอดซื้อ 20 บาท รับ 1 แต้ม</p>
                         </div>
                     </div>
-                    <div id="mem-goal-box" style="background: rgba(255,255,255,0.65); padding: 10px 14px; border-radius: 10px;">
-                        <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--primary-blue); margin-bottom: 5px; gap: 8px;">
-                            <span id="mem-goal-text">กำลังคำนวณเป้าหมาย...</span>
-                            <span id="mem-goal-percent">0%</span>
+
+                    <!-- หลอดแบ่งระดับ Rank (MEMBER -> SILVER -> GOLD -> PLATINUM) -->
+                    <div id="mem-goal-box" class="rank-progress-box">
+                        <div class="rank-progress-header">
+                            <span id="mem-rank-current-label" class="rank-current-pill">
+                                <i class="fa-solid fa-medal"></i> MEMBER
+                            </span>
+                            <span id="mem-goal-text" class="rank-goal-desc">กำลังคำนวณระดับ Rank...</span>
+                            <span id="mem-goal-percent" class="rank-percent-text">0%</span>
                         </div>
-                        <div style="width: 100%; height: 8px; background: rgba(30, 58, 138, 0.15); border-radius: 99px; overflow: hidden;">
-                            <div id="mem-goal-bar" style="width: 0%; height: 100%; background: var(--primary-blue); border-radius: 99px; transition: width 0.4s ease;"></div>
+
+                        <div class="rank-bar-wrapper">
+                            <div class="rank-bar-track">
+                                <div id="mem-goal-bar" class="rank-bar-fill"></div>
+                            </div>
+                            <div class="rank-milestones">
+                                <div class="rank-step active" data-rank="MEMBER" style="left: 0%;">
+                                    <span class="rank-dot"></span>
+                                    <span class="rank-name">MEMBER<small>0</small></span>
+                                </div>
+                                <div class="rank-step" data-rank="SILVER" style="left: 33.33%;">
+                                    <span class="rank-dot"></span>
+                                    <span class="rank-name">SILVER<small>50</small></span>
+                                </div>
+                                <div class="rank-step" data-rank="GOLD" style="left: 66.66%;">
+                                    <span class="rank-dot"></span>
+                                    <span class="rank-name">GOLD<small>150</small></span>
+                                </div>
+                                <div class="rank-step" data-rank="PLATINUM" style="left: 100%;">
+                                    <span class="rank-dot"></span>
+                                    <span class="rank-name">PLATINUM<small>300</small></span>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
                     <!-- ปุ่มกิจกรรมรายวัน (เช็กอิน + ปฏิทินเช็กอิน + วงล้อลุ้นแต้ม) -->
                     <div class="member-fun-actions">
                         <button type="button" id="btn-daily-checkin" class="btn-checkin" onclick="handleDailyCheckin()">
@@ -947,3 +974,4 @@
     </script>
 </body>
 </html>
+```[cite: 10]
