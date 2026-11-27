@@ -1,11 +1,13 @@
 /* ==========================================================
    ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + QR Code + POS)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + QR Code + POS + จำการล็อกอิน)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppYWVrYmtrYWRqcG1nbWhxbHlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU3NjA3MDcsImV4cCI6MjExMTMzNjcwN30.l7l0Y_HDeQR25f1KOer1RXGLTldIAiWEq3zFQptk1_c';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const SESSION_KEY = 'muk_rcheewa_user_id';
 
 let db = {
     settings: {
@@ -93,7 +95,7 @@ function formatDateTime(isoString) {
 }
 
 // ==========================================================
-// ระบบยืนยันตัวตน (Authentication)
+// ระบบยืนยันตัวตน (Authentication & Auto-Login)
 // ==========================================================
 function switchAuthTab(tab) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -105,6 +107,42 @@ function switchAuthTab(tab) {
     } else {
         document.querySelectorAll('.tab-btn')[1].classList.add('active');
         document.getElementById('register-form').classList.add('active');
+    }
+}
+
+function applyLoggedInUI(user) {
+    currentUser = user;
+    localStorage.setItem(SESSION_KEY, String(user.id));
+
+    document.getElementById('auth-view').classList.add('hidden');
+    document.getElementById('main-app').classList.remove('hidden');
+    document.getElementById('nav-user-name').textContent = user.full_name;
+
+    if (user.role === 'admin') {
+        document.getElementById('nav-user-role').textContent = 'ผู้ดูแลร้าน';
+        document.getElementById('member-dashboard').classList.add('hidden');
+        document.getElementById('admin-dashboard').classList.remove('hidden');
+        renderAdminDashboard();
+    } else {
+        document.getElementById('nav-user-role').textContent = 'สมาชิก';
+        document.getElementById('admin-dashboard').classList.add('hidden');
+        document.getElementById('member-dashboard').classList.remove('hidden');
+        renderMemberDashboard();
+    }
+}
+
+async function restoreSession() {
+    const savedUserId = localStorage.getItem(SESSION_KEY);
+    if (!savedUserId) return;
+
+    const ok = await syncFromCloud();
+    if (!ok) return;
+
+    const user = db.users.find(u => String(u.id) === String(savedUserId));
+    if (user) {
+        applyLoggedInUI(user);
+    } else {
+        localStorage.removeItem(SESSION_KEY);
     }
 }
 
@@ -139,22 +177,7 @@ async function handleLogin(e) {
         return;
     }
 
-    currentUser = user;
-    document.getElementById('auth-view').classList.add('hidden');
-    document.getElementById('main-app').classList.remove('hidden');
-    document.getElementById('nav-user-name').textContent = user.full_name;
-
-    if (user.role === 'admin') {
-        document.getElementById('nav-user-role').textContent = 'ผู้ดูแลร้าน';
-        document.getElementById('member-dashboard').classList.add('hidden');
-        document.getElementById('admin-dashboard').classList.remove('hidden');
-        renderAdminDashboard();
-    } else {
-        document.getElementById('nav-user-role').textContent = 'สมาชิก';
-        document.getElementById('admin-dashboard').classList.add('hidden');
-        document.getElementById('member-dashboard').classList.remove('hidden');
-        renderMemberDashboard();
-    }
+    applyLoggedInUI(user);
     showToast(`ยินดีต้อนรับคุณ ${user.full_name}`);
 }
 
@@ -240,6 +263,7 @@ async function handleRegister(e) {
 
 function handleLogout() {
     currentUser = null;
+    localStorage.removeItem(SESSION_KEY);
     document.getElementById('main-app').classList.add('hidden');
     document.getElementById('auth-view').classList.remove('hidden');
     document.getElementById('login-form').reset();
@@ -1165,5 +1189,6 @@ function startRealtimeSync() {
         .subscribe();
 }
 
-// เริ่มทำงานทันทีที่เปิดหน้าเว็บ
+// เริ่มทำงานทันทีที่เปิดหน้าเว็บ: กู้คืนสถานะล็อกอิน + ซิงก์เรียลไทม์
+restoreSession();
 startRealtimeSync();
