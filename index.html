@@ -111,25 +111,29 @@
             <!-- แบนเนอร์โปรโมชั่น -->
             <div id="member-promo-section" class="promo-carousel-wrapper"></div>
 
-            <!-- บัตรสมาชิกดิจิทัล -->
+            <!-- บัตรสมาชิกดิจิทัล (แสดงบาร์โค้ดสำหรับเครื่องยิง) -->
             <div class="member-hero-grid">
                 <div class="digital-card">
-                    <div class="card-top">
-                        <div>
-                            <span class="card-tag">MUK RCHEEWA MEMBER</span>
-                            <h2 id="mem-card-name">ชื่อสมาชิก</h2>
-                            <p id="mem-card-id">เบอร์โทรศัพท์: -</p>
+                    <div class="card-top" style="flex-direction: column; gap: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%; gap: 8px; flex-wrap: wrap;">
+                            <div>
+                                <span class="card-tag">MUK RCHEEWA MEMBER</span>
+                                <h2 id="mem-card-name">ชื่อสมาชิก</h2>
+                                <p id="mem-card-id">เบอร์โทรศัพท์: -</p>
+                            </div>
+                            <button type="button" onclick="openProfileModal()" style="background: #FACC15; color: #1E3A8A; font-weight: 600; border: none; border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);">
+                                <i class="fa-solid fa-user-pen"></i> แก้ไขโปรไฟล์ / รหัสผ่าน
+                            </button>
                         </div>
-                        <div style="text-align: center;">
-                            <div id="member-qrcode" class="qr-mock" onclick="openMemberQRModal()" style="cursor: pointer;" title="แตะเพื่อขยาย QR Code"></div>
-                            <small style="font-size: 10px; opacity: 0.85; display: block; margin-top: 2px;">แตะขยาย QR</small>
+
+                        <!-- กล่องบาร์โค้ดสมาชิก (แตะเพื่อขยายใหญ่ให้เครื่องยิงบาร์โค้ด) -->
+                        <div class="barcode-card-box" onclick="openMemberBarcodeModal()" title="แตะเพื่อขยายบาร์โค้ดสำหรับสแกน">
+                            <svg id="member-barcode"></svg>
+                            <span class="barcode-tap-hint"><i class="fa-solid fa-expand"></i> แตะขยายบาร์โค้ดให้พนักงานยิง</span>
                         </div>
                     </div>
-                    <div class="card-bottom" style="align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <div class="card-bottom" style="margin-top: 14px;">
                         <span>ร้านมักอาชีวะ วิทยาลัยอาชีวศึกษามหาสารคาม</span>
-                        <button type="button" onclick="openProfileModal()" style="background: #FACC15; color: #1E3A8A; font-weight: 600; border: none; border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);">
-                            <i class="fa-solid fa-user-pen"></i> แก้ไขโปรไฟล์ / รหัสผ่าน
-                        </button>
                     </div>
                 </div>
 
@@ -264,13 +268,10 @@
                 </div>
             </div>
 
-            <!-- กล่องแจ้งเตือนคำขอรีเซ็ตรหัสผ่าน (แสดงอัตโนมัติเมื่อมีสมาชิกแจ้งลืมรหัส) -->
-            <div id="admin-reset-alerts" class="card-box hidden" style="margin-bottom: 20px; border-left: 6px solid var(--danger-red); background: #FEF2F2;"></div>
-
             <!-- เมนูย่อยฝั่งแอดมิน -->
             <div class="sub-nav">
                 <button class="sub-nav-btn active" onclick="switchAdminTab('pos', this)">
-                    <i class="fa-solid fa-cash-register"></i> บันทึกยอดซื้อ / ให้แต้ม
+                    <i class="fa-solid fa-cash-register"></i> บันทึกยอดซื้อ / ยิงบาร์โค้ด
                 </button>
                 <button class="sub-nav-btn" onclick="switchAdminTab('redemptions', this)">
                     <i class="fa-solid fa-bell-concierge"></i> คำขอแลกรางวัล <span id="pending-badge" class="badge-count">0</span>
@@ -289,18 +290,28 @@
                 </button>
             </div>
 
-            <!-- แท็บ 1: บันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS) -->
+            <!-- แท็บ 1: บันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS รองรับเครื่องยิงบาร์โค้ด) -->
             <div id="admin-tab-pos" class="tab-content active">
                 <div class="pos-grid">
                     <div class="card-box">
-                        <h3><i class="fa-solid fa-cash-register"></i> บันทึกยอดซื้อและให้แต้มสมาชิก</h3>
-                        <form onsubmit="handleRecordPurchase(event)">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+                            <h3 style="margin-bottom: 0;"><i class="fa-solid fa-barcode"></i> ยิงบาร์โค้ดลูกค้า / บันทึกยอดซื้อ</h3>
+                            <span style="background: #DBEAFE; color: var(--primary-blue); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px;">
+                                <i class="fa-solid fa-bolt"></i> พร้อมรับสัญญาณเครื่องยิง
+                            </span>
+                        </div>
+                        <form id="pos-purchase-form" onsubmit="handleRecordPurchase(event)">
                             <div class="form-group">
-                                <label>ค้นหาสมาชิก (พิมพ์เบอร์โทรศัพท์ / ชื่อ / สแกน QR)</label>
-                                <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="พิมพ์เบอร์โทรหรือชื่อเพื่อค้นหาทันที..." oninput="handlePOSMemberSearch()" required autocomplete="off">
+                                <label>ยิงบาร์โค้ดลูกค้า (หรือพิมพ์เบอร์โทรศัพท์ / ชื่อ)</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="ยิงบาร์โค้ดได้เลยทันที..." oninput="handlePOSMemberSearch()" onkeydown="handlePOSBarcodeKeydown(event)" required autocomplete="off" style="border-color: var(--primary-blue); background: #F8FAFC; font-weight: 600;">
+                                    <button type="button" class="btn btn-outline" onclick="clearPOSMember()" title="ล้างข้อมูลเพื่อยิงลูกค้ารายถัดไป" style="padding: 8px 12px; flex-shrink: 0;">
+                                        <i class="fa-solid fa-eraser"></i> ยิงใหม่
+                                    </button>
+                                </div>
                                 <datalist id="pos-members-datalist"></datalist>
                                 <input type="hidden" id="pos-selected-user-id">
-                                <small id="pos-member-status" style="color:var(--primary-blue); font-weight:500; display:block; margin-top:4px;"></small>
+                                <div id="pos-member-status" style="margin-top: 8px;"></div>
                             </div>
                             <div class="form-group">
                                 <label>ยอดซื้อสินค้า (บาท)
@@ -454,7 +465,7 @@
         </main>
     </div>
 
-  <!-- Modal ลืมรหัสผ่าน (รีเซ็ตรหัสผ่านด้วยตนเอง) -->
+    <!-- Modal ลืมรหัสผ่าน (รีเซ็ตรหัสผ่านด้วยตนเอง) -->
     <div id="forgot-modal" class="modal hidden">
         <div class="modal-content" style="max-width: 420px;">
             <div class="modal-header">
@@ -489,26 +500,26 @@
         </div>
     </div>
 
-    <!-- Modal ขยาย QR Code สมาชิกเต็มจอ -->
-    <div id="qr-modal" class="modal hidden">
-        <div class="modal-content" style="max-width: 360px; text-align: center;">
+    <!-- Modal ขยายบาร์โค้ดสมาชิกเต็มจอ (สำหรับเครื่องยิงบาร์โค้ด) -->
+    <div id="barcode-modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 420px; text-align: center;">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-qrcode"></i> บัตรสมาชิกดิจิทัล</h3>
-                <button class="close-btn" onclick="closeModal('qr-modal')">&times;</button>
+                <h3><i class="fa-solid fa-barcode"></i> บาร์โค้ดสมาชิกดิจิทัล</h3>
+                <button class="close-btn" onclick="closeModal('barcode-modal')">&times;</button>
             </div>
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">แสดง QR Code นี้ให้พนักงานสแกนเพื่อสะสมแต้ม</p>
-            <div style="background: #FFFFFF; padding: 18px; border-radius: 16px; border: 2px solid var(--primary-blue); display: inline-block; margin-bottom: 12px;">
-                <div id="member-qrcode-large"></div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">ยื่นหน้าจอนี้ให้พนักงานใช้เครื่องยิงบาร์โค้ดเพื่อสะสมแต้ม</p>
+            <div style="background: #FFFFFF; padding: 20px 14px; border-radius: 16px; border: 2px solid var(--primary-blue); margin-bottom: 12px; overflow-x: auto;">
+                <svg id="member-barcode-large"></svg>
             </div>
-            <h4 id="qr-modal-name" style="color: var(--primary-blue); font-size: 18px;">-</h4>
-            <p id="qr-modal-phone" style="font-size: 20px; font-weight: 700; color: var(--text-dark); letter-spacing: 1px; margin: 4px 0 16px;">-</p>
-            <button type="button" class="btn btn-primary btn-block" onclick="closeModal('qr-modal')">ปิดหน้าต่าง</button>
+            <h4 id="barcode-modal-name" style="color: var(--primary-blue); font-size: 18px;">-</h4>
+            <p id="barcode-modal-phone" style="font-size: 20px; font-weight: 700; color: var(--text-dark); letter-spacing: 1px; margin: 4px 0 16px;">-</p>
+            <button type="button" class="btn btn-primary btn-block" onclick="closeModal('barcode-modal')">ปิดหน้าต่าง</button>
         </div>
     </div>
 
     <!-- Modal บัตรคูปองรับของรางวัล (Redemption Ticket) -->
     <div id="ticket-modal" class="modal hidden">
-        <div class="modal-content" style="max-width: 380px; text-align: center; border-top: 6px solid var(--accent-yellow);">
+        <div class="modal-content" style="max-width: 400px; text-align: center; border-top: 6px solid var(--accent-yellow);">
             <div class="modal-header">
                 <h3><i class="fa-solid fa-ticket"></i> คูปองรับของรางวัล</h3>
                 <button class="close-btn" onclick="closeModal('ticket-modal')">&times;</button>
@@ -516,8 +527,8 @@
             <div style="background: #F8FAFC; border: 2px dashed var(--primary-blue); border-radius: 14px; padding: 18px; margin-bottom: 14px;">
                 <span style="font-size: 12px; color: var(--text-muted);">รหัสอ้างอิงคูปอง</span>
                 <div id="ticket-code" style="font-size: 28px; font-weight: 700; color: var(--primary-blue); letter-spacing: 2px; margin: 2px 0 10px;">#0000</div>
-                <div style="background: #FFFFFF; padding: 10px; border-radius: 10px; display: inline-block; margin-bottom: 10px;">
-                    <div id="ticket-qrcode"></div>
+                <div style="background: #FFFFFF; padding: 10px; border-radius: 10px; margin-bottom: 10px; overflow-x: auto;">
+                    <svg id="ticket-barcode"></svg>
                 </div>
                 <h4 id="ticket-reward-name" style="font-size: 17px; color: var(--text-dark); margin-bottom: 4px;">ชื่อของรางวัล</h4>
                 <p id="ticket-member-info" style="font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">สมาชิก: -</p>
@@ -703,8 +714,8 @@
         </div>
     </div>
 
-    <!-- ไลบรารีสร้าง QR Code และเชื่อมต่อ Supabase -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- ไลบรารีสร้างบาร์โค้ด (JsBarcode) และเชื่อมต่อ Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
     <script>

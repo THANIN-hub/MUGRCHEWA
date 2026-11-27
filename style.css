@@ -970,3 +970,38 @@ body {
     font-size: 11px;
     cursor: pointer;
 }
+/* ==========================================
+   กล่องแสดงบาร์โค้ดบนบัตรสมาชิก (Barcode Card Box)
+   ========================================== */
+.barcode-card-box {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 10px 14px 6px;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+    transition: transform 0.15s ease;
+    width: 100%;
+    overflow: hidden;
+}
+
+.barcode-card-box:hover {
+    transform: scale(1.015);
+}
+
+.barcode-card-box svg,
+#member-barcode-large,
+#ticket-barcode {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
+.barcode-tap-hint {
+    display: block;
+    font-size: 11px;
+    color: var(--primary-blue);
+    font-weight: 500;
+    margin-top: 2px;
+}

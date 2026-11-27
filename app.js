@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + QR Code + POS + คูปอง + จำการล็อกอิน)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + คูปอง + จำการล็อกอิน)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -8,7 +8,6 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const SESSION_KEY = 'muk_rcheewa_user_id';
-const RESET_KEY_PREFIX = 'reset_req_';
 
 let db = {
     settings: {
@@ -19,8 +18,7 @@ let db = {
     rewards: [],
     point_history: [],
     redemptions: [],
-    promotions: [],
-    reset_requests: []
+    promotions: []
 };
 
 let currentUser = null;
@@ -45,18 +43,10 @@ async function syncFromCloud() {
         db.point_history = historyRes.data || [];
         db.redemptions = redeemRes.data || [];
         db.promotions = promoRes.data || [];
-        db.reset_requests = [];
 
         if (settingsRes.data) {
             settingsRes.data.forEach(s => {
-                if (s.setting_key.startsWith(RESET_KEY_PREFIX)) {
-                    const phone = s.setting_key.replace(RESET_KEY_PREFIX, '');
-                    db.reset_requests.push({
-                        key: s.setting_key,
-                        phone: phone,
-                        requested_at: s.setting_value
-                    });
-                } else {
+                if (!s.setting_key.startsWith('reset_req_')) {
                     db.settings[s.setting_key] = parseInt(s.setting_value);
                 }
             });
@@ -210,6 +200,7 @@ function applyLoggedInUI(user) {
         document.getElementById('member-dashboard').classList.add('hidden');
         document.getElementById('admin-dashboard').classList.remove('hidden');
         renderAdminDashboard();
+        focusPOSBarcodeInput();
     } else {
         document.getElementById('nav-user-role').textContent = 'สมาชิก';
         document.getElementById('admin-dashboard').classList.add('hidden');
@@ -352,24 +343,44 @@ function handleLogout() {
 }
 
 // ==========================================================
-// 1. ระบบสมาชิก (Member Functions)
+// 1. ระบบสมาชิก (Member Functions - Barcode)
 // ==========================================================
-function openMemberQRModal() {
+function generateMemberBarcode(codeText) {
+    const svgEl = document.getElementById('member-barcode');
+    if (!svgEl || typeof JsBarcode === 'undefined') return;
+    JsBarcode(svgEl, String(codeText), {
+        format: "CODE128",
+        lineColor: "#0F172A",
+        background: "#FFFFFF",
+        width: 2,
+        height: 46,
+        displayValue: true,
+        fontSize: 13,
+        font: "Prompt",
+        margin: 4
+    });
+}
+
+function openMemberBarcodeModal() {
     if (!currentUser) return;
     const codeText = currentUser.student_id || currentUser.username;
-    const container = document.getElementById('member-qrcode-large');
-    container.innerHTML = '';
-    new QRCode(container, {
-        text: String(codeText),
-        width: 210,
-        height: 210,
-        colorDark: "#1E3A8A",
-        colorLight: "#FFFFFF",
-        correctLevel: QRCode.CorrectLevel.M
-    });
-    document.getElementById('qr-modal-name').textContent = currentUser.full_name;
-    document.getElementById('qr-modal-phone').textContent = currentUser.student_id || '-';
-    document.getElementById('qr-modal').classList.remove('hidden');
+    const svgLarge = document.getElementById('member-barcode-large');
+    if (svgLarge && typeof JsBarcode !== 'undefined') {
+        JsBarcode(svgLarge, String(codeText), {
+            format: "CODE128",
+            lineColor: "#0F172A",
+            background: "#FFFFFF",
+            width: 2.6,
+            height: 85,
+            displayValue: true,
+            fontSize: 16,
+            font: "Prompt",
+            margin: 6
+        });
+    }
+    document.getElementById('barcode-modal-name').textContent = currentUser.full_name;
+    document.getElementById('barcode-modal-phone').textContent = currentUser.student_id || '-';
+    document.getElementById('barcode-modal').classList.remove('hidden');
 }
 
 function openTicketModal(redemptionId) {
@@ -384,16 +395,20 @@ function openTicketModal(redemptionId) {
     document.getElementById('ticket-member-info').textContent = `สมาชิก: ${currentUser.full_name} (${currentUser.student_id || '-'})`;
     document.getElementById('ticket-date').textContent = `วันที่ขอแลก: ${formatDateTime(item.created_at)}`;
 
-    const qrBox = document.getElementById('ticket-qrcode');
-    qrBox.innerHTML = '';
-    new QRCode(qrBox, {
-        text: `REDEEM-${item.id}-${currentUser.student_id || currentUser.id}`,
-        width: 130,
-        height: 130,
-        colorDark: "#1E3A8A",
-        colorLight: "#FFFFFF",
-        correctLevel: QRCode.CorrectLevel.M
-    });
+    const ticketSvg = document.getElementById('ticket-barcode');
+    if (ticketSvg && typeof JsBarcode !== 'undefined') {
+        JsBarcode(ticketSvg, `RDM-${item.id}`, {
+            format: "CODE128",
+            lineColor: "#1E3A8A",
+            background: "#FFFFFF",
+            width: 2.2,
+            height: 55,
+            displayValue: true,
+            fontSize: 13,
+            font: "Prompt",
+            margin: 4
+        });
+    }
 
     const statusMap = {
         pending: '<span class="status-pill status-pending">รออนุมัติ / รอรับของที่เคาน์เตอร์</span>',
@@ -525,20 +540,6 @@ async function switchMemberTab(tabName, btnElement) {
     renderMemberDashboard();
 }
 
-function generateMemberQR(codeText) {
-    const qrContainer = document.getElementById('member-qrcode');
-    if (!qrContainer) return;
-    qrContainer.innerHTML = '';
-    new QRCode(qrContainer, {
-        text: String(codeText),
-        width: 48,
-        height: 48,
-        colorDark: "#1E3A8A",
-        colorLight: "#FFFFFF",
-        correctLevel: QRCode.CorrectLevel.M
-    });
-}
-
 function renderMemberPointsGoal() {
     const goalText = document.getElementById('mem-goal-text');
     const goalPercent = document.getElementById('mem-goal-percent');
@@ -577,7 +578,7 @@ function renderMemberDashboard() {
     document.getElementById('mem-current-points').textContent = currentUser.points.toLocaleString();
     document.getElementById('mem-rate-info').textContent = `ทุกยอดซื้อ ${db.settings.baht_per_point} บาท รับ 1 แต้ม`;
 
-    generateMemberQR(currentUser.student_id || currentUser.username);
+    generateMemberBarcode(currentUser.student_id || currentUser.username);
     renderMemberPointsGoal();
     renderMemberPromotions();
     renderMemberRewards();
@@ -841,8 +842,36 @@ function renderMemberHistory() {
 }
 
 // ==========================================================
-// 2. ระบบผู้ดูแลร้าน (Admin Functions)
+// 2. ระบบผู้ดูแลร้าน (Admin Functions & Barcode POS Scanner)
 // ==========================================================
+function focusPOSBarcodeInput() {
+    setTimeout(() => {
+        const searchInput = document.getElementById('pos-member-search');
+        if (searchInput) searchInput.focus();
+    }, 100);
+}
+
+function clearPOSMember() {
+    const searchInput = document.getElementById('pos-member-search');
+    const hiddenId = document.getElementById('pos-selected-user-id');
+    const statusBox = document.getElementById('pos-member-status');
+
+    if (searchInput) {
+        searchInput.value = '';
+        searchInput.focus();
+    }
+    if (hiddenId) hiddenId.value = '';
+    if (statusBox) statusBox.innerHTML = '';
+}
+
+function handlePOSBarcodeKeydown(e) {
+    // เครื่องยิงบาร์โค้ดจะส่งปุ่ม Enter อัตโนมัติหลังยิงรหัสเสร็จ
+    if (e.key === 'Enter') {
+        e.preventDefault(); // ป้องกันไม่ให้ฟอร์ม submit ก่อนกรอกยอดเงิน
+        handlePOSMemberSearch(true);
+    }
+}
+
 async function switchAdminTab(tabName, btnElement) {
     document.querySelectorAll('#admin-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('#admin-dashboard .tab-content').forEach(c => c.classList.remove('active'));
@@ -852,61 +881,10 @@ async function switchAdminTab(tabName, btnElement) {
 
     await syncFromCloud();
     renderAdminDashboard();
-}
 
-function renderAdminResetAlerts() {
-    const alertBox = document.getElementById('admin-reset-alerts');
-    if (!alertBox) return;
-
-    if (!db.reset_requests || !db.reset_requests.length) {
-        alertBox.classList.add('hidden');
-        alertBox.innerHTML = '';
-        return;
+    if (tabName === 'pos') {
+        focusPOSBarcodeInput();
     }
-
-    alertBox.classList.remove('hidden');
-    alertBox.innerHTML = `
-        <h3 style="color: var(--danger-red); margin-bottom: 10px;">
-            <i class="fa-solid fa-triangle-exclamation"></i> มีคำขอรีเซ็ตรหัสผ่านจากสมาชิก (${db.reset_requests.length} รายการ)
-        </h3>
-        <div style="display: flex; flex-direction: column; gap: 8px;">
-            ${db.reset_requests.map(req => {
-                const user = db.users.find(u => u.student_id && u.student_id.replace(/\D/g, '') === req.phone);
-                const nameDisplay = user ? `${user.full_name} (${req.phone})` : req.phone;
-                return `
-                    <div style="display: flex; justify-content: space-between; align-items: center; background: #FFFFFF; padding: 10px 14px; border-radius: 10px; border: 1px solid #FECACA; flex-wrap: wrap; gap: 8px;">
-                        <div>
-                            <strong>${nameDisplay}</strong>
-                            <small style="color: var(--text-muted); display: block;">แจ้งเมื่อ: ${formatDateTime(req.requested_at)}</small>
-                        </div>
-                        <div style="display: flex; gap: 8px;">
-                            <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="approvePasswordReset('${req.phone}')">
-                                <i class="fa-solid fa-key"></i> รีเซ็ตเป็น 1234
-                            </button>
-                            <button class="btn btn-outline-sm" onclick="dismissPasswordReset('${req.phone}')">ปิดแจ้งเตือน</button>
-                        </div>
-                    </div>
-                `;
-            }).join('')}
-        </div>
-    `;
-}
-
-async function approvePasswordReset(phone) {
-    const user = db.users.find(u => u.student_id && u.student_id.replace(/\D/g, '') === phone);
-    if (user) {
-        await sb.from('users').update({ password: '1234' }).eq('id', user.id);
-    }
-    await sb.from('settings').delete().eq('setting_key', `${RESET_KEY_PREFIX}${phone}`);
-    await syncFromCloud();
-    renderAdminDashboard();
-    showToast(`รีเซ็ตรหัสผ่านของ ${user ? user.full_name : phone} เป็น "1234" เรียบร้อยแล้ว`);
-}
-
-async function dismissPasswordReset(phone) {
-    await sb.from('settings').delete().eq('setting_key', `${RESET_KEY_PREFIX}${phone}`);
-    await syncFromCloud();
-    renderAdminDashboard();
 }
 
 function renderAdminDashboard() {
@@ -923,7 +901,6 @@ function renderAdminDashboard() {
 
     document.getElementById('setting-baht-per-point').value = db.settings.baht_per_point;
 
-    renderAdminResetAlerts();
     renderPOSMemberSelect();
     renderRecentPOS();
     renderAdminRedemptions();
@@ -943,25 +920,65 @@ function renderPOSMemberSelect() {
     ).join('');
 }
 
-function handlePOSMemberSearch() {
-    const input = document.getElementById('pos-member-search').value.trim();
+function handlePOSMemberSearch(fromScannerEnter = false) {
+    const searchInput = document.getElementById('pos-member-search');
+    const input = searchInput.value.trim();
     const hiddenId = document.getElementById('pos-selected-user-id');
-    const statusText = document.getElementById('pos-member-status');
+    const statusBox = document.getElementById('pos-member-status');
 
-    const keyword = input.split('|')[0].trim().toLowerCase();
-    const found = db.users.find(u =>
-        u.role === 'member' &&
-        ((u.student_id && u.student_id.toLowerCase() === keyword) ||
-         u.username.toLowerCase() === keyword ||
-         `${u.student_id || u.username} | ${u.full_name}`.toLowerCase() === input.toLowerCase())
-    );
+    const rawKeyword = input.split('|')[0].trim().toLowerCase();
+    const cleanDigits = rawKeyword.replace(/\D/g, '');
+
+    const found = db.users.find(u => {
+        if (u.role !== 'member') return false;
+        const dbPhone = (u.student_id || '').replace(/\D/g, '');
+        return (
+            (cleanDigits !== '' && dbPhone === cleanDigits) ||
+            (u.student_id && u.student_id.toLowerCase() === rawKeyword) ||
+            u.username.toLowerCase() === rawKeyword ||
+            `${u.student_id || u.username} | ${u.full_name}`.toLowerCase() === input.toLowerCase()
+        );
+    });
 
     if (found) {
         hiddenId.value = found.id;
-        statusText.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--success-green)"></i> พบสมาชิก: ${found.full_name} (แต้มปัจจุบัน: ${found.points})`;
+        statusBox.innerHTML = `
+            <div style="background: #DCFCE7; border: 1.5px solid #16A34A; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="font-size: 12px; color: #166534; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> พบข้อมูลสมาชิก</span>
+                    <div style="font-size: 16px; font-weight: 700; color: #0F172A;">${found.full_name}</div>
+                    <small style="color: #334155;">เบอร์โทร: ${found.student_id || '-'}</small>
+                </div>
+                <div style="text-align: right;">
+                    <span style="font-size: 11px; color: #166534;">แต้มสะสม</span>
+                    <div style="font-size: 22px; font-weight: 700; color: #1E3A8A;">${found.points.toLocaleString()}</div>
+                </div>
+            </div>
+        `;
+
+        // ถ้ามาจากการยิงบาร์โค้ด หรือพิมพ์เบอร์ครบ 10 หลักตรงเป๊ะ ให้เด้งไปช่องกรอกยอดซื้อทันที
+        if (fromScannerEnter || (cleanDigits.length === 10 && found.student_id === cleanDigits)) {
+            searchInput.value = `${found.student_id || found.username} | ${found.full_name}`;
+            const amountInput = document.getElementById('pos-amount');
+            if (amountInput) {
+                amountInput.focus();
+                amountInput.select();
+            }
+            if (fromScannerEnter) {
+                showToast(`สแกนพบคุณ ${found.full_name} กรอกยอดซื้อได้เลย`);
+            }
+        }
     } else {
         hiddenId.value = '';
-        statusText.textContent = input ? 'กำลังค้นหาสมาชิก...' : '';
+        if (input) {
+            statusBox.innerHTML = `<small style="color: var(--danger-red);"><i class="fa-solid fa-magnifying-glass"></i> ${fromScannerEnter ? 'ไม่พบข้อมูลบาร์โค้ดนี้ในระบบสมาชิก' : 'กำลังค้นหาสมาชิก...'}</small>`;
+            if (fromScannerEnter) {
+                showToast('ไม่พบข้อมูลบาร์โค้ดสมาชิกนี้ในระบบ');
+                searchInput.select();
+            }
+        } else {
+            statusBox.innerHTML = '';
+        }
     }
 }
 
@@ -984,7 +1001,8 @@ async function handleRecordPurchase(e) {
     const note = document.getElementById('pos-note').value.trim();
 
     if (!userId) {
-        showToast('ไม่พบข้อมูลสมาชิก กรุณาเลือกจากรายการที่ค้นหา');
+        showToast('ไม่พบข้อมูลสมาชิก กรุณายิงบาร์โค้ดหรือเลือกจากรายการ');
+        focusPOSBarcodeInput();
         return;
     }
 
@@ -1005,12 +1023,15 @@ async function handleRecordPurchase(e) {
 
     e.target.reset();
     document.getElementById('pos-selected-user-id').value = '';
-    document.getElementById('pos-member-status').textContent = '';
+    document.getElementById('pos-member-status').innerHTML = '';
     document.getElementById('pos-preview-points').textContent = '0 แต้ม';
 
     await syncFromCloud();
     renderAdminDashboard();
     showToast(`บันทึกยอดซื้อ ${amount} บาท ให้คุณ ${member.full_name} (+${pointsEarned} แต้ม)`);
+
+    // โฟกัสกลับไปที่ช่องยิงบาร์โค้ดทันที เพื่อรอรับลูกค้ารายถัดไป
+    focusPOSBarcodeInput();
 }
 
 async function handleUpdateRate(e) {
