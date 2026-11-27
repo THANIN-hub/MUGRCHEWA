@@ -41,11 +41,9 @@
                     <label>รหัสผ่าน (Password)</label>
                     <input type="password" id="login-password" required placeholder="กรอกรหัสผ่าน">
                 </div>
-                <button type="submit" class="btn btn-primary btn-block">
+                <button type="submit" id="btn-login-submit" class="btn btn-primary btn-block">
                     <i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ
                 </button>
-
-                
             </form>
 
             <!-- ฟอร์มสมัครสมาชิก -->
@@ -66,8 +64,8 @@
                     <label>รหัสผ่าน (Password)</label>
                     <input type="password" id="reg-password" required placeholder="ตั้งรหัสผ่าน">
                 </div>
-                <button type="submit" class="btn btn-primary btn-block">
-                    <i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรี 5 แต้ม!)
+                <button type="submit" id="btn-reg-submit" class="btn btn-primary btn-block">
+                    <i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)
                 </button>
             </form>
         </div>
@@ -87,6 +85,9 @@
                 </div>
             </div>
             <div class="nav-user">
+                <button class="btn btn-logout" onclick="refreshCurrentView()" title="รีเฟรชข้อมูลล่าสุด">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
                 <span id="nav-user-role" class="role-badge">สมาชิก</span>
                 <span id="nav-user-name" class="user-name">ชื่อผู้ใช้</span>
                 <button class="btn btn-logout" onclick="handleLogout()">
@@ -99,22 +100,23 @@
              1. ระบบสมาชิก (Member Dashboard)
              ========================================== -->
         <main id="member-dashboard" class="container hidden">
+            <!-- แบนเนอร์โปรโมชั่น -->
+            <div id="member-promo-section" class="promo-carousel-wrapper"></div>
+
             <!-- บัตรสมาชิกดิจิทัล -->
             <div class="member-hero-grid">
                 <div class="digital-card">
                     <div class="card-top">
                         <div>
                             <span class="card-tag">MUK RCHEEWA MEMBER</span>
-                            <h2 id="mem-card-name">นายกิตติพงษ์ รักเรียน</h2>
-                            <p id="mem-card-id">รหัสนักศึกษา: 66309010001</p>
+                            <h2 id="mem-card-name">ชื่อสมาชิก</h2>
+                            <p id="mem-card-id">รหัสนักศึกษา: -</p>
                         </div>
-                        <div class="qr-mock">
-                            <i class="fa-solid fa-qrcode"></i>
-                        </div>
+                        <div id="member-qrcode" class="qr-mock" title="ให้พนักงานสแกนเพื่อสะสมแต้ม"></div>
                     </div>
                     <div class="card-bottom">
                         <span>ร้านมักอาชีวะ วิทยาลัยอาชีวศึกษามหาสารคาม</span>
-                        <span id="mem-card-username">@std001</span>
+                        <span id="mem-card-username">@user</span>
                     </div>
                 </div>
 
@@ -238,6 +240,9 @@
                 <button class="sub-nav-btn" onclick="switchAdminTab('redemptions', this)">
                     <i class="fa-solid fa-bell-concierge"></i> คำขอแลกรางวัล <span id="pending-badge" class="badge-count">0</span>
                 </button>
+                <button class="sub-nav-btn" onclick="switchAdminTab('promotions', this)">
+                    <i class="fa-solid fa-bullhorn"></i> โปรโมชั่น / แบนเนอร์
+                </button>
                 <button class="sub-nav-btn" onclick="switchAdminTab('members', this)">
                     <i class="fa-solid fa-user-gear"></i> จัดการสมาชิก
                 </button>
@@ -249,18 +254,28 @@
                 </button>
             </div>
 
-            <!-- แท็บ 1: บันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ -->
+            <!-- แท็บ 1: บันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS) -->
             <div id="admin-tab-pos" class="tab-content active">
                 <div class="pos-grid">
                     <div class="card-box">
                         <h3><i class="fa-solid fa-cash-register"></i> บันทึกยอดซื้อและให้แต้มสมาชิก</h3>
                         <form onsubmit="handleRecordPurchase(event)">
                             <div class="form-group">
-                                <label>เลือกสมาชิก (ค้นหาจากชื่อหรือรหัสนักศึกษา)</label>
-                                <select id="pos-member-select" required></select>
+                                <label>ค้นหาสมาชิก (พิมพ์รหัสนักศึกษา / ชื่อ / สแกน QR)</label>
+                                <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="พิมพ์รหัสหรือชื่อเพื่อค้นหาทันที..." oninput="handlePOSMemberSearch()" required autocomplete="off">
+                                <datalist id="pos-members-datalist"></datalist>
+                                <input type="hidden" id="pos-selected-user-id">
+                                <small id="pos-member-status" style="color:var(--primary-blue); font-weight:500; display:block; margin-top:4px;"></small>
                             </div>
                             <div class="form-group">
-                                <label>ยอดซื้อสินค้า (บาท)</label>
+                                <label>ยอดซื้อสินค้า (บาท)
+                                    <span class="quick-price-btns">
+                                        <button type="button" class="btn-outline-sm" onclick="setQuickAmount(35)">35฿</button>
+                                        <button type="button" class="btn-outline-sm" onclick="setQuickAmount(45)">45฿</button>
+                                        <button type="button" class="btn-outline-sm" onclick="setQuickAmount(60)">60฿</button>
+                                        <button type="button" class="btn-outline-sm" onclick="setQuickAmount(100)">100฿</button>
+                                    </span>
+                                </label>
                                 <input type="number" id="pos-amount" min="1" step="0.01" required placeholder="0.00" oninput="calculatePreviewPoints()">
                             </div>
                             <div class="form-group">
@@ -329,7 +344,20 @@
                 </div>
             </div>
 
-            <!-- แท็บ 3: จัดการข้อมูลสมาชิก -->
+            <!-- แท็บ 3: จัดการโปรโมชั่น / แบนเนอร์ -->
+            <div id="admin-tab-promotions" class="tab-content">
+                <div class="card-box">
+                    <div class="card-header-flex">
+                        <h3><i class="fa-solid fa-bullhorn"></i> จัดการโปรโมชั่นและแบนเนอร์หน้าร้าน</h3>
+                        <button class="btn btn-primary" onclick="openPromoModal()">
+                            <i class="fa-solid fa-plus"></i> เพิ่มแบนเนอร์โปรโมชั่น
+                        </button>
+                    </div>
+                    <div id="admin-promos-grid" class="rewards-grid"></div>
+                </div>
+            </div>
+
+            <!-- แท็บ 4: จัดการข้อมูลสมาชิก -->
             <div id="admin-tab-members" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
@@ -358,7 +386,7 @@
                 </div>
             </div>
 
-            <!-- แท็บ 4: จัดการของรางวัล -->
+            <!-- แท็บ 5: จัดการของรางวัล -->
             <div id="admin-tab-rewards" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
@@ -371,7 +399,7 @@
                 </div>
             </div>
 
-            <!-- แท็บ 5: รายงานสรุปการใช้งานระบบ -->
+            <!-- แท็บ 6: รายงานสรุปการใช้งานระบบ -->
             <div id="admin-tab-reports" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
@@ -389,6 +417,46 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Modal เพิ่ม/แก้ไขโปรโมชั่น -->
+    <div id="promo-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="promo-modal-title">เพิ่มแบนเนอร์โปรโมชั่น</h3>
+                <button class="close-btn" onclick="closeModal('promo-modal')">&times;</button>
+            </div>
+            <form onsubmit="savePromotion(event)">
+                <input type="hidden" id="edit-promo-id">
+                <div class="form-group">
+                    <label>ป้ายกำกับสั้นๆ (Badge)</label>
+                    <input type="text" id="modal-promo-badge" placeholder="เช่น โปรประจำเดือน, แต้มคูณ 2" required>
+                </div>
+                <div class="form-group">
+                    <label>หัวข้อโปรโมชั่น</label>
+                    <input type="text" id="modal-promo-title" placeholder="เช่น ซื้อเครื่องดื่ม 2 แก้ว รับเพิ่ม 2 แต้ม" required>
+                </div>
+                <div class="form-group">
+                    <label>รายละเอียดเพิ่มเติม</label>
+                    <input type="text" id="modal-promo-desc" placeholder="เงื่อนไขและระยะเวลาโปรโมชั่น" required>
+                </div>
+                <div class="form-group">
+                    <label>URL รูปภาพแบนเนอร์ (แนะนำแนวนอน 16:9)</label>
+                    <input type="url" id="modal-promo-image" placeholder="https://..." required>
+                </div>
+                <div class="form-group">
+                    <label>สถานะการแสดงผล</label>
+                    <select id="modal-promo-active">
+                        <option value="1">เปิดแสดงผลหน้าสมาชิก</option>
+                        <option value="0">ซ่อนแบนเนอร์ชั่วคราว</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeModal('promo-modal')">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary">บันทึกแบนเนอร์</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- Modal เพิ่ม/แก้ไขสมาชิก -->
@@ -465,6 +533,9 @@
         </div>
     </div>
 
+    <!-- ไลบรารีสร้าง QR Code และเชื่อมต่อ Supabase -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
 </body>
 </html>
