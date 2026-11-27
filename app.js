@@ -1,1207 +1,1345 @@
 /* ==========================================================
-   ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ (Supabase Cloud)
+   ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + Tier + Check-in Calendar + Custom Lucky Spin + Audit Log)
    ========================================================== */
 
-const SUPABASE_URL = 'https://zswuxvtrdmlhbrhuxpjk.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpzd3V4dnRyZG1saGJyaHV4cGprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2ODk3NTcsImV4cCI6MjA4ODI2NTc1N30.XEQf07R3n-x2Q-Q1a9K--G29Y5cE0X-W2R7G8v8dG5A';
+const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppYWVrYmtrYWRqcG1nbWhxbHlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU3NjA3MDcsImV4cCI6MjExMTMzNjcwN30.l7l0Y_HDeQR25f1KOer1RXGLTldIAiWEq3zFQptk1_c';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-let appState = {
-    currentUser: null,
-    users: [],
-    rewards: [],
-    promotions: [],
-    earnHistory: [],
-    redeemHistory: [],
-    auditLogs: [],
-    settings: { bahtPerPoint: 20 }
-};
-
-let promoSlideIndex = 0;
-let promoAutoTimer = null;
-let rewardFilter = 'all';
-let reportPeriod = 'today';
-
-const SLOT_COLORS = ['#FACC15', '#3B82F6', '#16A34A', '#F97316', '#8B5CF6', '#EF4444'];
+const SESSION_KEY = 'muk_rcheewa_user_id';
 
 const DEFAULT_SPIN_CONFIG = {
     enabled: true,
     cost: 3,
-    slots: [
-        { label: '+1 แต้ม', points: 1, weight: 35 },
-        { label: '+2 แต้ม', points: 2, weight: 28 },
-        { label: '+5 แต้ม', points: 5, weight: 15 },
-        { label: '0 แต้ม', points: 0, weight: 12 },
-        { label: '+10 แต้ม', points: 10, weight: 7 },
-        { label: '+15 แต้ม', points: 15, weight: 3 }
-    ]
+    prizes: [1, 3, 5, 2, 10, 15],
+    weights: [30, 28, 18, 15, 7, 2]
 };
 
-let spinConfig = JSON.parse(JSON.stringify(DEFAULT_SPIN_CONFIG));
+let db = {
+    settings: {
+        baht_per_point: 20,
+        welcome_bonus: 5,
+        spin_config: { ...DEFAULT_SPIN_CONFIG }
+    },
+    users: [],
+    rewards: [],
+    point_history: [],
+    redemptions: [],
+    promotions: []
+};
+
+let currentUser = null;
+let rewardFilterMode = 'all';
+let reportPeriod = 'today';
+let isSpinning = false;
 let currentWheelRotation = 0;
-let isWheelSpinning = false;
-let isCheckinBusy = false;
+let calViewYear = new Date().getFullYear();
+let calViewMonth = new Date().getMonth();
 
-// ตารางรางวัล Daily Login 30 วัน (5x6 ช่อง)
-const DAILY_LOGIN_30_REWARDS = Array.from({ length: 30 }, (_, idx) => {
-    const day = idx + 1;
-    if (day === 30) return { day, points: 10, icon: '👑', isBonus: true };
-    if (day === 20 || day === 25) return { day, points: 5, icon: '🏆', isBonus: true };
-    if (day === 10 || day === 15) return { day, points: 3, icon: '🎁', isBonus: true };
-    if (day === 5) return { day, points: 2, icon: '✨', isBonus: true };
-    return { day, points: 1, icon: '🪙', isBonus: false };
-});
-
-/* ==========================================================
-   1. ฟังก์ชันช่วยเหลือพื้นฐาน & การดึงข้อมูลจาก Supabase
-   ========================================================== */
-function showToast(message) {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.innerHTML = `<i class="fa-solid fa-bell"></i> ${message}`;
-    container.appendChild(toast);
-    setTimeout(() => toast.remove(), 3500);
-}
-
-function formatDate(isoString) {
-    if (!isoString) return '-';
-    const d = new Date(isoString);
-    return d.toLocaleDateString('th-TH', {
-        year: '2-digit', month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit'
-    });
-}
-
-function getLocalDateStr(dateObj = new Date()) {
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const d = String(dateObj.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
-function getMonthPrefix(dateObj = new Date()) {
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    return `${y}-${m}`;
-}
-
-function renderBarcodeSafe(selector, value, options = {}) {
-    const el = document.querySelector(selector);
-    if (!el || !value) return;
-    el.innerHTML = '';
-    if (typeof JsBarcode === 'function') {
-        try {
-            JsBarcode(el, String(value), {
-                format: 'CODE128',
-                lineColor: '#0F172A',
-                background: '#FFFFFF',
-                width: options.width || 2,
-                height: options.height || 44,
-                displayValue: options.displayValue !== undefined ? options.displayValue : true,
-                fontSize: options.fontSize || 13,
-                font: 'Prompt',
-                margin: 2
-            });
-        } catch (e) {
-            console.warn('Barcode render error:', e);
-        }
-    }
-}
-
-function calculateMemberTier(userId) {
-    const totalEarned = appState.earnHistory
-        .filter(e => String(e.userId) === String(userId) && Number(e.pointsEarned) > 0)
-        .reduce((sum, e) => sum + Number(e.pointsEarned), 0);
-
-    if (totalEarned >= 150) {
-        return { name: 'GOLD', cssClass: 'tier-gold', icon: 'fa-crown', totalEarned, nextText: `สะสมรวม ${totalEarned} แต้ม (ระดับสูงสุด)` };
-    }
-    if (totalEarned >= 50) {
-        return { name: 'SILVER', cssClass: 'tier-silver', icon: 'fa-gem', totalEarned, nextText: `อีก ${150 - totalEarned} แต้ม ขึ้นระดับ GOLD` };
-    }
-    return { name: 'MEMBER', cssClass: 'tier-member', icon: 'fa-medal', totalEarned, nextText: `อีก ${50 - totalEarned} แต้ม ขึ้นระดับ SILVER` };
-}
-
-async function syncAllDataFromCloud() {
+// โหลดข้อมูลล่าสุดทั้งหมดจาก Supabase
+async function syncFromCloud() {
     try {
-        const [
-            { data: settingsData },
-            { data: usersData },
-            { data: rewardsData },
-            { data: promosData },
-            { data: earnData },
-            { data: redeemData }
-        ] = await Promise.all([
-            sb.from('settings').select('*').eq('id', 1).single(),
+        const [usersRes, rewardsRes, historyRes, redeemRes, promoRes, settingsRes] = await Promise.all([
             sb.from('users').select('*').order('id', { ascending: true }),
-            sb.from('rewards').select('*').order('points_required', { ascending: true }),
+            sb.from('rewards').select('*').order('id', { ascending: true }),
+            sb.from('point_history').select('*').order('id', { ascending: false }),
+            sb.from('redemptions').select('*').order('id', { ascending: false }),
             sb.from('promotions').select('*').order('id', { ascending: false }),
-            sb.from('earn_history').select('*').order('created_at', { ascending: false }),
-            sb.from('redeem_history').select('*').order('created_at', { ascending: false })
+            sb.from('settings').select('*')
         ]);
 
-        if (settingsData) {
-            appState.settings.bahtPerPoint = settingsData.baht_per_point || 20;
-            if (settingsData.spin_config && Array.isArray(settingsData.spin_config.slots)) {
-                spinConfig = settingsData.spin_config;
-            }
-        }
+        if (usersRes.error) throw usersRes.error;
 
-        if (usersData) {
-            appState.users = usersData.map(u => ({
-                id: u.id,
-                username: u.username,
-                password: u.password,
-                fullName: u.full_name,
-                studentId: u.student_id,
-                role: u.role,
-                points: u.points
-            }));
-        }
+        db.users = usersRes.data || [];
+        db.rewards = rewardsRes.data || [];
+        db.point_history = historyRes.data || [];
+        db.redemptions = redeemRes.data || [];
+        db.promotions = promoRes.data || [];
 
-        if (rewardsData) {
-            appState.rewards = rewardsData.map(r => ({
-                id: r.id,
-                name: r.name,
-                desc: r.description,
-                pointsRequired: r.points_required,
-                stock: r.stock,
-                image: r.image
-            }));
+        if (settingsRes.data) {
+            settingsRes.data.forEach(s => {
+                if (s.setting_key === 'lucky_spin_config') {
+                    try {
+                        const parsed = JSON.parse(s.setting_value);
+                        db.settings.spin_config = {
+                            enabled: parsed.enabled !== false,
+                            cost: Number(parsed.cost) >= 0 ? Number(parsed.cost) : 3,
+                            prizes: Array.isArray(parsed.prizes) && parsed.prizes.length === 6 ? parsed.prizes.map(Number) : [...DEFAULT_SPIN_CONFIG.prizes],
+                            weights: Array.isArray(parsed.weights) && parsed.weights.length === 6 ? parsed.weights.map(Number) : [...DEFAULT_SPIN_CONFIG.weights]
+                        };
+                    } catch (e) {}
+                } else if (!s.setting_key.startsWith('reset_req_')) {
+                    db.settings[s.setting_key] = parseInt(s.setting_value);
+                }
+            });
         }
-
-        if (promosData) {
-            appState.promotions = promosData.map(p => ({
-                id: p.id,
-                badge: p.badge,
-                title: p.title,
-                desc: p.description,
-                image: p.image
-            }));
-        }
-
-        if (earnData) {
-            appState.earnHistory = earnData.map(e => ({
-                id: e.id,
-                userId: e.user_id,
-                userName: e.user_name,
-                amount: Number(e.amount),
-                pointsEarned: e.points_earned,
-                note: e.note,
-                createdAt: e.created_at
-            }));
-        }
-
-        if (redeemData) {
-            appState.redeemHistory = redeemData.map(r => ({
-                id: r.id,
-                refCode: r.ref_code,
-                userId: r.user_id,
-                userName: r.user_name,
-                rewardId: r.reward_id,
-                rewardName: r.reward_name,
-                pointsUsed: r.points_used,
-                status: r.status,
-                createdAt: r.created_at
-            }));
-        }
-
-        if (appState.currentUser) {
-            const freshMe = appState.users.find(u => u.id === appState.currentUser.id);
-            if (freshMe) appState.currentUser = freshMe;
-        }
+        return true;
     } catch (err) {
-        console.error('Supabase sync error:', err);
-        showToast('ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาตรวจสอบอินเทอร์เน็ต');
+        console.error('Supabase Sync Error:', err);
+        showToast('เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล');
+        return false;
     }
 }
 
 async function refreshCurrentView() {
-    showToast('กำลังอัปเดตข้อมูลล่าสุด...');
-    await syncAllDataFromCloud();
-    if (appState.currentUser) {
-        if (appState.currentUser.role === 'admin') {
-            renderAdminDashboard();
-        } else {
-            renderMemberDashboard();
-        }
-    }
-}
+    showToast('กำลังซิงก์ข้อมูลล่าสุด...');
+    const ok = await syncFromCloud();
+    if (!ok || !currentUser) return;
 
-function saveSessionUser(user, remember = true) {
-    const payload = JSON.stringify({ id: user.id, role: user.role });
-    if (remember) {
-        localStorage.setItem('muk_session_user', payload);
-        sessionStorage.removeItem('muk_session_user');
+    if (currentUser.role === 'admin') {
+        renderAdminDashboard();
     } else {
-        sessionStorage.setItem('muk_session_user', payload);
-        localStorage.removeItem('muk_session_user');
+        renderMemberDashboard();
     }
 }
 
-function getSavedSessionUser() {
-    const raw = localStorage.getItem('muk_session_user') || sessionStorage.getItem('muk_session_user');
-    if (!raw) return null;
-    try {
-        return JSON.parse(raw);
-    } catch {
-        return null;
+// ==========================================================
+// ระบบแจ้งเตือน (Toast Notification) & Helper Functions
+// ==========================================================
+function showToast(message) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${message}`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.remove();
+    }, 3500);
+}
+
+function formatDateTime(isoString) {
+    if (!isoString) return '-';
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return isoString;
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const h = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${d} ${h}:${min}`;
+}
+
+function formatTicketCode(id) {
+    return `#${String(id).padStart(4, '0')}`;
+}
+
+function getLocalDateKey(isoString) {
+    const d = isoString ? new Date(isoString) : new Date();
+    if (isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// คำนวณระดับสมาชิก (Member Tier) จากยอดแต้มสะสมรวม
+function getMemberTierInfo(userId, currentPoints = 0) {
+    const earnedSum = db.point_history
+        .filter(h => h.user_id === userId && Number(h.points_earned) > 0)
+        .reduce((sum, h) => sum + Number(h.points_earned), 0);
+
+    const lifetimePoints = Math.max(earnedSum, Number(currentPoints) || 0);
+
+    if (lifetimePoints >= 150) {
+        return {
+            name: 'GOLD',
+            label: 'ระดับ GOLD',
+            cssClass: 'tier-gold',
+            icon: 'fa-crown',
+            lifetimePoints,
+            nextText: `ระดับสูงสุดแล้ว (สะสมรวม ${lifetimePoints} แต้ม)`
+        };
+    } else if (lifetimePoints >= 50) {
+        const diff = 150 - lifetimePoints;
+        return {
+            name: 'SILVER',
+            label: 'ระดับ SILVER',
+            cssClass: 'tier-silver',
+            icon: 'fa-award',
+            lifetimePoints,
+            nextText: `อีก ${diff} แต้ม ขึ้นระดับ GOLD`
+        };
+    } else {
+        const diff = 50 - lifetimePoints;
+        return {
+            name: 'MEMBER',
+            label: 'ระดับ MEMBER',
+            cssClass: 'tier-member',
+            icon: 'fa-medal',
+            lifetimePoints,
+            nextText: `อีก ${diff} แต้ม ขึ้นระดับ SILVER`
+        };
     }
 }
 
-function clearSessionUser() {
-    localStorage.removeItem('muk_session_user');
-    sessionStorage.removeItem('muk_session_user');
-}
-
-/* ==========================================================
-   2. ระบบเข้าสู่ระบบ & สมัครสมาชิก (Auth)
-   ========================================================== */
+// ==========================================================
+// ระบบยืนยันตัวตน (Authentication, Auto-Login & Forgot Password)
+// ==========================================================
 function switchAuthTab(tab) {
-    document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
-        btn.classList.toggle('active', (tab === 'login' && idx === 0) || (tab === 'register' && idx === 1));
-    });
-    document.getElementById('login-form').classList.toggle('active', tab === 'login');
-    document.getElementById('register-form').classList.toggle('active', tab === 'register');
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
+
+    if (tab === 'login') {
+        document.querySelectorAll('.tab-btn')[0].classList.add('active');
+        document.getElementById('login-form').classList.add('active');
+    } else {
+        document.querySelectorAll('.tab-btn')[1].classList.add('active');
+        document.getElementById('register-form').classList.add('active');
+    }
 }
 
 function openForgotModal() {
+    const loginVal = document.getElementById('login-username').value.replace(/\D/g, '');
+    document.getElementById('forgot-phone').value = loginVal;
+    document.getElementById('forgot-fullname').value = '';
+    document.getElementById('forgot-new-password').value = '';
+    document.getElementById('forgot-confirm-password').value = '';
     document.getElementById('forgot-modal').classList.remove('hidden');
 }
 
-async function handleLogin(e) {
+async function handleForgotPassword(e) {
     e.preventDefault();
-    const inputLogin = document.getElementById('login-username').value.trim();
-    const password = document.getElementById('login-password').value.trim();
-    const rememberMe = document.getElementById('login-remember')?.checked ?? true;
-    const btn = document.getElementById('btn-login-submit');
+    const btn = document.getElementById('btn-forgot-submit');
+    const phone = document.getElementById('forgot-phone').value.replace(/\D/g, '');
+    const fullName = document.getElementById('forgot-fullname').value.trim().replace(/\s+/g, ' ');
+    const newPass = document.getElementById('forgot-new-password').value.trim();
+    const confirmPass = document.getElementById('forgot-confirm-password').value.trim();
+
+    if (phone.length < 9 || phone.length > 10) {
+        showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
+        return;
+    }
+
+    if (!newPass) {
+        showToast('กรุณากรอกรหัสผ่านใหม่');
+        return;
+    }
+
+    if (newPass !== confirmPass) {
+        showToast('รหัสผ่านใหม่และยืนยันรหัสผ่านไม่ตรงกัน');
+        return;
+    }
 
     btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังเข้าสู่ระบบ...';
+    btn.textContent = 'กำลังตรวจสอบข้อมูล...';
 
-    await syncAllDataFromCloud();
+    await syncFromCloud();
 
-    const user = appState.users.find(u =>
-        (u.studentId === inputLogin || u.username.toLowerCase() === inputLogin.toLowerCase()) &&
-        u.password === password
+    const member = db.users.find(u =>
+        u.role === 'member' &&
+        u.student_id &&
+        u.student_id.replace(/\D/g, '') === phone &&
+        u.full_name &&
+        u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()
     );
 
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ';
-
-    if (!user) {
-        showToast('เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง!');
-        return;
-    }
-
-    appState.currentUser = user;
-    saveSessionUser(user, rememberMe);
-    showToast(`ยินดีต้อนรับคุณ ${user.fullName}`);
-    initAppView();
-}
-
-async function handleRegister(e) {
-    e.preventDefault();
-    const fullName = document.getElementById('reg-fullname').value.trim();
-    const studentId = document.getElementById('reg-studentid').value.trim();
-    const password = document.getElementById('reg-password').value.trim();
-    const btn = document.getElementById('btn-reg-submit');
-
-    if (!/^0\d{9}$/.test(studentId)) {
-        showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (ตัวเลข 10 หลัก ขึ้นต้นด้วย 0)');
-        return;
-    }
-
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังสมัครสมาชิก...';
-
-    await syncAllDataFromCloud();
-
-    if (appState.users.some(u => u.studentId === studentId)) {
+    if (!member) {
+        showToast('เบอร์โทรศัพท์หรือชื่อ-นามสกุลไม่ตรงกับข้อมูลสมาชิกในระบบ');
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรี 10 แต้ม!)';
-        showToast('เบอร์โทรศัพท์นี้ถูกสมัครสมาชิกแล้ว กรุณาเข้าสู่ระบบ');
+        btn.textContent = 'เปลี่ยนรหัสผ่านทันที';
         return;
     }
 
-    const { data: newUserData, error } = await sb.from('users').insert([{
-        username: fullName,
-        password: password,
-        full_name: fullName,
-        student_id: studentId,
-        role: 'member',
-        points: 10
-    }]).select().single();
+    const { error } = await sb.from('users').update({
+        password: newPass
+    }).eq('id', member.id);
+
+    btn.disabled = false;
+    btn.textContent = 'เปลี่ยนรหัสผ่านทันที';
 
     if (error) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรี 10 แต้ม!)';
-        showToast('เกิดข้อผิดพลาดในการสมัครสมาชิก: ' + error.message);
+        showToast('เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน กรุณาลองใหม่อีกครั้ง');
         return;
     }
 
-    await sb.from('earn_history').insert([{
-        user_id: newUserData.id,
-        user_name: fullName,
-        amount: 0,
-        points_earned: 10,
-        note: 'โบนัสต้อนรับสมาชิกใหม่'
-    }]);
-
-    await syncAllDataFromCloud();
-
-    const createdUser = appState.users.find(u => u.id === newUserData.id);
-    appState.currentUser = createdUser;
-    saveSessionUser(createdUser, true);
-
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรี 10 แต้ม!)';
-    e.target.reset();
-    showToast('สมัครสมาชิกสำเร็จ! คุณได้รับ 10 แต้มต้อนรับฟรี');
-    initAppView();
+    closeModal('forgot-modal');
+    document.getElementById('login-username').value = phone;
+    document.getElementById('login-password').value = newPass;
+    showToast('เปลี่ยนรหัสผ่านสำเร็จ! กดเข้าสู่ระบบด้วยรหัสผ่านใหม่ได้ทันที');
 }
 
-function handleLogout() {
-    clearSessionUser();
-    appState.currentUser = null;
-    if (promoAutoTimer) clearInterval(promoAutoTimer);
-    document.getElementById('main-app').classList.add('hidden');
-    document.getElementById('auth-view').classList.remove('hidden');
-    document.getElementById('login-form').reset();
-}
+function applyLoggedInUI(user, rememberMe = null) {
+    currentUser = user;
+    sessionStorage.setItem(SESSION_KEY, String(user.id));
 
-function initAppView() {
-    const user = appState.currentUser;
+    if (rememberMe === true) {
+        localStorage.setItem(SESSION_KEY, String(user.id));
+    } else if (rememberMe === false) {
+        localStorage.removeItem(SESSION_KEY);
+    }
+
     document.getElementById('auth-view').classList.add('hidden');
     document.getElementById('main-app').classList.remove('hidden');
-
-    document.getElementById('nav-user-name').textContent = user.fullName;
-    document.getElementById('nav-user-role').textContent = user.role === 'admin' ? 'ผู้ดูแลร้าน' : 'สมาชิก';
+    document.getElementById('nav-user-name').textContent = user.full_name;
 
     if (user.role === 'admin') {
+        document.getElementById('nav-user-role').textContent = 'ผู้ดูแลร้าน';
         document.getElementById('member-dashboard').classList.add('hidden');
         document.getElementById('admin-dashboard').classList.remove('hidden');
         renderAdminDashboard();
+        focusPOSBarcodeInput();
     } else {
+        document.getElementById('nav-user-role').textContent = 'สมาชิก';
         document.getElementById('admin-dashboard').classList.add('hidden');
         document.getElementById('member-dashboard').classList.remove('hidden');
         renderMemberDashboard();
     }
 }
 
-/* ==========================================================
-   3. ระบบฝั่งสมาชิก (Member Dashboard)
-   ========================================================== */
-function renderMemberDashboard() {
-    const user = appState.currentUser;
-    document.getElementById('mem-card-name').textContent = user.fullName;
-    document.getElementById('mem-card-id').textContent = `เบอร์โทรศัพท์: ${user.studentId}`;
-    document.getElementById('mem-current-points').textContent = user.points;
-    document.getElementById('mem-rate-info').textContent = `ทุกยอดซื้อ ${appState.settings.bahtPerPoint} บาท รับ 1 แต้ม`;
+async function restoreSession() {
+    const savedUserId = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
+    if (!savedUserId) return;
 
-    const tier = calculateMemberTier(user.id);
-    const tierBadge = document.getElementById('mem-tier-badge');
-    if (tierBadge) {
-        tierBadge.className = `tier-badge ${tier.cssClass}`;
-        tierBadge.innerHTML = `<i class="fa-solid ${tier.icon}"></i> ${tier.name}`;
+    const ok = await syncFromCloud();
+    if (!ok) return;
+
+    const user = db.users.find(u => String(u.id) === String(savedUserId));
+    if (user) {
+        applyLoggedInUI(user);
+    } else {
+        sessionStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem(SESSION_KEY);
     }
-    const tierNextEl = document.getElementById('mem-tier-next-text');
-    if (tierNextEl) tierNextEl.textContent = tier.nextText;
+}
 
-    renderBarcodeSafe('#member-barcode', user.studentId, { width: 2.1, height: 42, fontSize: 13 });
-    updateDailyCheckinButton();
+async function handleLogin(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-login-submit');
+    const rawInput = document.getElementById('login-username').value.trim();
+    const cleanPhone = rawInput.replace(/\D/g, '');
+    const password = document.getElementById('login-password').value.trim();
 
-    const spinBtn = document.getElementById('btn-open-spin');
-    if (spinBtn) {
-        spinBtn.classList.toggle('hidden', spinConfig.enabled === false);
-        spinBtn.innerHTML = `<i class="fa-solid fa-dharmachakra fa-spin" style="--fa-animation-duration: 8s;"></i> วงล้อ (${spinConfig.cost} แต้ม)`;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังเข้าสู่ระบบ...';
+
+    await syncFromCloud();
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ';
+
+    const user = db.users.find(u => {
+        if (u.password !== password) return false;
+        if (u.role === 'admin') {
+            return u.username.toLowerCase() === rawInput.toLowerCase();
+        }
+        const dbPhone = (u.student_id || '').replace(/\D/g, '');
+        return cleanPhone !== '' && dbPhone === cleanPhone;
+    });
+
+    if (!user) {
+        showToast('เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง');
+        return;
     }
 
-    renderMemberGoalBar();
-    renderMemberPromotions();
-    renderMemberRewards();
-    renderMemberHistory();
+    const isRemember = document.getElementById('login-remember')?.checked ?? true;
+    applyLoggedInUI(user, isRemember);
+    showToast(`ยินดีต้อนรับคุณ ${user.full_name}`);
+}
+
+async function handleRegister(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-reg-submit');
+    const fullName = document.getElementById('reg-fullname').value.trim().replace(/\s+/g, ' ');
+    const phone = document.getElementById('reg-studentid').value.replace(/\D/g, '');
+    const username = fullName;
+    const password = document.getElementById('reg-password').value.trim();
+
+    if (phone.length < 9 || phone.length > 10) {
+        showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจสอบข้อมูล...';
+
+    await syncFromCloud();
+
+    const isNameDuplicate = db.users.some(u =>
+        (u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase()) ||
+        (u.full_name && u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase())
+    );
+
+    if (isNameDuplicate) {
+        showToast('ไม่สามารถสมัครได้: ชื่อ-นามสกุลนี้มีผู้ใช้งานในระบบแล้ว');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
+        return;
+    }
+
+    const isPhoneDuplicate = db.users.some(u =>
+        u.student_id && u.student_id.replace(/\D/g, '') === phone
+    );
+
+    if (isPhoneDuplicate) {
+        showToast('ไม่สามารถสมัครได้: เบอร์โทรศัพท์นี้ลงทะเบียนในระบบแล้ว');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
+        return;
+    }
+
+    const bonus = db.settings.welcome_bonus || 5;
+
+    const { data: insertedUser, error } = await sb.from('users').insert([{
+        username,
+        password,
+        full_name: fullName,
+        student_id: phone,
+        role: 'member',
+        points: bonus
+    }]).select().single();
+
+    if (error) {
+        showToast('ไม่สามารถสมัครสมาชิกได้: ชื่อหรือเบอร์โทรอาจซ้ำในระบบ');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
+        return;
+    }
+
+    await sb.from('point_history').insert([{
+        user_id: insertedUser.id,
+        amount: 0,
+        points_earned: bonus,
+        note: 'โบนัสต้อนรับสมาชิกใหม่'
+    }]);
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)';
+    e.target.reset();
+    showToast(`สมัครสมาชิกสำเร็จ! ได้รับโบนัส ${bonus} แต้ม`);
+
+    document.getElementById('login-username').value = phone;
+    document.getElementById('login-password').value = password;
+    await handleLogin(new Event('submit'));
+}
+
+function handleLogout() {
+    currentUser = null;
+    sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_KEY);
+    document.getElementById('main-app').classList.add('hidden');
+    document.getElementById('auth-view').classList.remove('hidden');
+    document.getElementById('login-form').reset();
+    showToast('ออกจากระบบเรียบร้อยแล้ว');
+}
+
+// ==========================================================
+// 1. ระบบสมาชิก (Member Functions: Barcode, Tier, Check-in Calendar, Lucky Spin)
+// ==========================================================
+function generateMemberBarcode(codeText) {
+    const svgEl = document.getElementById('member-barcode');
+    if (!svgEl || typeof JsBarcode === 'undefined') return;
+    JsBarcode(svgEl, String(codeText), {
+        format: "CODE128",
+        lineColor: "#0F172A",
+        background: "#FFFFFF",
+        width: 2,
+        height: 46,
+        displayValue: true,
+        fontSize: 13,
+        font: "Prompt",
+        margin: 4
+    });
 }
 
 function openMemberBarcodeModal() {
-    const user = appState.currentUser;
-    if (!user) return;
-    document.getElementById('barcode-modal-name').textContent = user.fullName;
-    document.getElementById('barcode-modal-phone').textContent = `รหัสสมาชิก / เบอร์โทร: ${user.studentId}`;
-    renderBarcodeSafe('#member-barcode-large', user.studentId, { width: 2.6, height: 80, fontSize: 16 });
-    document.getElementById('member-barcode-modal').classList.remove('hidden');
-}
-
-/* ==========================================================
-   ระบบ Daily Login 30 วัน (สไตล์กระดานรางวัล 5x6 ช่อง)
-   ========================================================== */
-function getUserCheckinProgress(userId) {
-    const monthPrefix = getMonthPrefix();
-    const todayStr = getLocalDateStr();
-
-    const monthClaims = appState.earnHistory.filter(e =>
-        String(e.userId) === String(userId) &&
-        (e.note || '').includes('เช็กอินรายวัน') &&
-        getLocalDateStr(new Date(e.createdAt)).startsWith(monthPrefix)
-    );
-
-    const uniqueDaysSet = new Set(monthClaims.map(e => getLocalDateStr(new Date(e.createdAt))));
-    const claimedCount = Math.min(uniqueDaysSet.size, 30);
-    const checkedToday = uniqueDaysSet.has(todayStr);
-
-    return { claimedCount, checkedToday };
-}
-
-function updateDailyCheckinButton() {
-    const user = appState.currentUser;
-    const btn = document.getElementById('btn-daily-checkin');
-    if (!user || !btn) return;
-
-    const { claimedCount, checkedToday } = getUserCheckinProgress(user.id);
-
-    if (checkedToday) {
-        btn.classList.add('checked');
-        btn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Daily Login (${claimedCount}/30)`;
-    } else {
-        btn.classList.remove('checked');
-        const nextDay = Math.min(claimedCount + 1, 30);
-        btn.innerHTML = `<i class="fa-solid fa-calendar-check"></i> เช็กอินวันที่ ${nextDay}/30!`;
+    if (!currentUser) return;
+    const codeText = currentUser.student_id || currentUser.username;
+    const svgLarge = document.getElementById('member-barcode-large');
+    if (svgLarge && typeof JsBarcode !== 'undefined') {
+        JsBarcode(svgLarge, String(codeText), {
+            format: "CODE128",
+            lineColor: "#0F172A",
+            background: "#FFFFFF",
+            width: 2.6,
+            height: 85,
+            displayValue: true,
+            fontSize: 16,
+            font: "Prompt",
+            margin: 6
+        });
     }
+    document.getElementById('barcode-modal-name').textContent = currentUser.full_name;
+    document.getElementById('barcode-modal-phone').textContent = currentUser.student_id || '-';
+    document.getElementById('barcode-modal').classList.remove('hidden');
+}
+
+// เช็กอินรายวันรับแต้มฟรี (+1 แต้ม) & ปฏิทินการเช็กอิน
+function getMemberCheckinDatesSet() {
+    const set = new Set();
+    if (!currentUser) return set;
+    db.point_history.forEach(h => {
+        if (h.user_id === currentUser.id && h.note === 'เช็กอินรายวันรับแต้มฟรี') {
+            const key = getLocalDateKey(h.created_at);
+            if (key) set.add(key);
+        }
+    });
+    return set;
+}
+
+function hasCheckedInToday() {
+    if (!currentUser) return false;
+    const todayKey = getLocalDateKey();
+    return getMemberCheckinDatesSet().has(todayKey);
+}
+
+function updateCheckinButtonUI() {
+    const btn = document.getElementById('btn-daily-checkin');
+    if (!btn) return;
+    if (hasCheckedInToday()) {
+        btn.disabled = true;
+        btn.classList.add('checked');
+        btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> เช็กอินวันนี้แล้ว';
+    } else {
+        btn.disabled = false;
+        btn.classList.remove('checked');
+        btn.innerHTML = '<i class="fa-solid fa-calendar-check"></i> เช็กอิน (+1 แต้ม)';
+    }
+}
+
+async function handleDailyCheckin() {
+    if (!currentUser) return;
+    const btn = document.getElementById('btn-daily-checkin');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังเช็กอิน...';
+
+    await syncFromCloud();
+    if (hasCheckedInToday()) {
+        updateCheckinButtonUI();
+        showToast('วันนี้คุณเช็กอินรับแต้มไปแล้ว พรุ่งนี้มาใหม่นะครับ!');
+        return;
+    }
+
+    const latestUser = db.users.find(u => u.id === currentUser.id);
+    const newPoints = (latestUser ? latestUser.points : currentUser.points) + 1;
+
+    await Promise.all([
+        sb.from('users').update({ points: newPoints }).eq('id', currentUser.id),
+        sb.from('point_history').insert([{
+            user_id: currentUser.id,
+            amount: 0,
+            points_earned: 1,
+            note: 'เช็กอินรายวันรับแต้มฟรี'
+        }])
+    ]);
+
+    await syncFromCloud();
+    renderMemberDashboard();
+    showToast('เช็กอินสำเร็จ! รับฟรี +1 แต้ม');
 }
 
 function openCheckinCalendarModal() {
-    renderDailyLoginBoard();
+    const now = new Date();
+    calViewYear = now.getFullYear();
+    calViewMonth = now.getMonth();
+    renderCheckinCalendar();
     document.getElementById('checkin-calendar-modal').classList.remove('hidden');
 }
 
-function renderDailyLoginBoard() {
-    const user = appState.currentUser;
-    if (!user) return;
+function changeCalendarMonth(delta) {
+    calViewMonth += delta;
+    if (calViewMonth < 0) {
+        calViewMonth = 11;
+        calViewYear -= 1;
+    } else if (calViewMonth > 11) {
+        calViewMonth = 0;
+        calViewYear += 1;
+    }
+    renderCheckinCalendar();
+}
 
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    const monthNamesTH = [
+function renderCheckinCalendar() {
+    const monthNames = [
         'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
         'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
     ];
-    const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
-    const remainingDays = Math.max(lastDayOfMonth - now.getDate() + 1, 1);
+    const thaiYear = calViewYear + 543;
+    document.getElementById('cal-month-title').textContent = `${monthNames[calViewMonth]} ${thaiYear}`;
 
-    document.getElementById('cal-month-title').textContent = `• ประจำเดือน ${monthNamesTH[month]} ${year + 543} •`;
-    document.getElementById('daily-dday-num').textContent = remainingDays;
-    document.getElementById('daily-period-footer').textContent =
-        `ระยะเวลา : 1 - ${lastDayOfMonth} ${monthNamesTH[month]} ${year + 543} (รีเซ็ตทุกวันที่ 1 ของเดือน)`;
+    const checkedSet = getMemberCheckinDatesSet();
+    const todayKey = getLocalDateKey();
 
-    const { claimedCount, checkedToday } = getUserCheckinProgress(user.id);
-    document.getElementById('cal-progress-badge').textContent = `เช็กอินแล้ว ${claimedCount}/30 วัน`;
+    const firstDayOfWeek = new Date(calViewYear, calViewMonth, 1).getDay();
+    const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
 
-    const speechEl = document.getElementById('daily-speech-text');
-    if (claimedCount >= 30) {
-        speechEl.innerHTML = `สุดยอดเลย!<br><strong>รับครบ 30 วันแล้ว 🎉</strong>`;
-    } else if (checkedToday) {
-        speechEl.innerHTML = `รับแต้มวันนี้แล้ว!<br><strong>พรุ่งนี้มาเช็กอินวันที่ ${claimedCount + 1} นะ!</strong>`;
-    } else {
-        const nextDay = claimedCount + 1;
-        speechEl.innerHTML = `กรุณาคลิกที่<br><strong>วันที่ ${nextDay} ~ !</strong>`;
+    const grid = document.getElementById('cal-days-grid');
+    let html = '';
+    let checkedThisMonth = 0;
+
+    for (let i = 0; i < firstDayOfWeek; i++) {
+        html += `<div class="cal-cell empty"></div>`;
     }
 
-    const gridEl = document.getElementById('daily-login-grid');
-    gridEl.innerHTML = DAILY_LOGIN_30_REWARDS.map(item => {
-        const isClaimed = item.day <= claimedCount;
-        const isClaimable = !checkedToday && item.day === (claimedCount + 1);
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateKey = `${calViewYear}-${String(calViewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const isChecked = checkedSet.has(dateKey);
+        const isToday = dateKey === todayKey;
 
-        let cls = 'daily-slot-card';
-        if (item.isBonus) cls += ' bonus-day';
-        if (isClaimed) cls += ' claimed';
-        if (isClaimable) cls += ' claimable';
+        if (isChecked) checkedThisMonth++;
 
-        const clickAttr = isClaimable ? `onclick="claimDailyLoginSlot(${item.day}, ${item.points})"` : '';
-        const stampHtml = isClaimed ? `<div class="daily-slot-stamp"><span>รับแล้ว</span></div>` : '';
+        const classes = ['cal-cell'];
+        if (isChecked) classes.push('checked');
+        if (isToday) classes.push('today');
 
-        return `
-            <div class="${cls}" ${clickAttr}>
-                <div class="daily-slot-icon">${item.icon}</div>
-                <div class="daily-slot-pts">+${item.points} แต้ม</div>
-                <div class="daily-slot-day">วันที่ ${item.day}</div>
-                ${stampHtml}
+        html += `
+            <div class="${classes.join(' ')}">
+                <span>${day}</span>
+                ${isChecked ? '<i class="fa-solid fa-check"></i>' : ''}
             </div>
         `;
-    }).join('');
-}
-
-async function claimDailyLoginSlot(dayNumber, bonusPoints) {
-    const user = appState.currentUser;
-    if (!user || isCheckinBusy) return;
-
-    const { claimedCount, checkedToday } = getUserCheckinProgress(user.id);
-    if (checkedToday || dayNumber !== claimedCount + 1) {
-        showToast('วันนี้คุณเช็กอินรับแต้มไปแล้ว พรุ่งนี้มาเช็กอินใหม่นะครับ!');
-        return;
     }
 
-    isCheckinBusy = true;
-    const newPoints = Number(user.points) + bonusPoints;
-    const noteText = `เช็กอินรายวัน Daily Login วันที่ ${dayNumber}/30 (+${bonusPoints} แต้ม)`;
-
-    const { error } = await sb.from('users').update({ points: newPoints }).eq('id', user.id);
-    if (error) {
-        isCheckinBusy = false;
-        showToast('เกิดข้อผิดพลาดในการเช็กอิน: ' + error.message);
-        return;
-    }
-
-    await sb.from('earn_history').insert([{
-        user_id: user.id,
-        user_name: user.fullName,
-        amount: 0,
-        points_earned: bonusPoints,
-        note: noteText
-    }]);
-
-    await syncAllDataFromCloud();
-    isCheckinBusy = false;
-    showToast(`เช็กอินวันที่ ${dayNumber} สำเร็จ! รับฟรี +${bonusPoints} แต้ม 🎉`);
-    renderMemberDashboard();
-    renderDailyLoginBoard();
+    grid.innerHTML = html;
+    document.getElementById('cal-month-summary').textContent = `เช็กอินเดือนนี้ ${checkedThisMonth} วัน`;
 }
 
-/* ==========================================================
-   วงล้อลุ้นแต้มนำโชค (Lucky Spin Wheel)
-   ========================================================== */
-function renderWheelVisual() {
-    const wheel = document.getElementById('lucky-wheel');
-    if (!wheel) return;
-    const slots = spinConfig.slots || DEFAULT_SPIN_CONFIG.slots;
-    const gradientStops = slots.map((_, i) => `${SLOT_COLORS[i % SLOT_COLORS.length]} ${i * 60}deg ${(i + 1) * 60}deg`).join(', ');
-    wheel.style.background = `conic-gradient(${gradientStops})`;
+// วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin - ใช้ค่าจากแอดมิน)
+function syncWheelLabelsUI() {
+    const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
+    for (let i = 0; i < 6; i++) {
+        const lbl = document.getElementById(`wheel-lbl-${i}`);
+        if (lbl) {
+            const val = Number(cfg.prizes[i]) || 0;
+            lbl.textContent = val > 0 ? `+${val} แต้ม` : 'ไม่ได้แต้ม';
+        }
+    }
 
-    wheel.innerHTML = slots.map((s, i) => {
-        const angle = i * 60 + 30;
-        return `<span class="wheel-label" style="transform: rotate(${angle}deg) translateY(-76px);">${s.label}</span>`;
-    }).join('');
+    const openBtn = document.getElementById('btn-open-lucky-spin');
+    if (openBtn) {
+        openBtn.style.display = cfg.enabled ? 'inline-flex' : 'none';
+    }
+
+    const descEl = document.getElementById('spin-desc-text');
+    if (descEl) {
+        const maxPrize = Math.max(...cfg.prizes.map(Number));
+        descEl.innerHTML = cfg.cost > 0
+            ? `ใช้ <strong>${cfg.cost} แต้ม</strong> ต่อการหมุน 1 ครั้ง ลุ้นรับสูงสุด <strong>${maxPrize} แต้ม!</strong>`
+            : `หมุนวงล้อ<strong>ฟรี!</strong> ลุ้นรับโบนัสสูงสุด <strong>${maxPrize} แต้ม!</strong>`;
+    }
+
+    const spinNowBtn = document.getElementById('btn-spin-now');
+    if (spinNowBtn && !isSpinning) {
+        spinNowBtn.innerHTML = cfg.cost > 0
+            ? `<i class="fa-solid fa-play"></i> หมุนวงล้อเลย! (ใช้ ${cfg.cost} แต้ม)`
+            : `<i class="fa-solid fa-play"></i> หมุนวงล้อฟรีเลย!`;
+    }
 }
 
 function openLuckySpinModal() {
-    if (spinConfig.enabled === false) {
-        showToast('ขออภัย ระบบวงล้อลุ้นแต้มปิดให้บริการชั่วคราว');
-        return;
-    }
-    const cost = Number(spinConfig.cost) || 0;
-    const maxPts = Math.max(...spinConfig.slots.map(s => Number(s.points) || 0));
-    const descEl = document.getElementById('spin-cost-desc');
-    if (descEl) {
-        descEl.innerHTML = cost > 0
-            ? `ใช้ <strong>${cost} แต้ม</strong> ต่อการหมุน 1 ครั้ง ลุ้นรับสูงสุด <strong>${maxPts} แต้ม</strong>!`
-            : `หมุนฟรี! ลุ้นรับรางวัลสูงสุด <strong>${maxPts} แต้ม</strong>!`;
-    }
-    renderWheelVisual();
-    document.getElementById('spin-result-text').textContent = '';
-    const btn = document.getElementById('btn-spin-now');
-    btn.disabled = false;
-    btn.innerHTML = cost > 0
-        ? `<i class="fa-solid fa-play"></i> หมุนวงล้อเลย (-${cost} แต้ม)`
-        : `<i class="fa-solid fa-play"></i> หมุนวงล้อฟรีเลย!`;
-    document.getElementById('lucky-spin-modal').classList.remove('hidden');
+    if (!currentUser) return;
+    syncWheelLabelsUI();
+    document.getElementById('spin-user-points').textContent = currentUser.points.toLocaleString();
+    document.getElementById('spin-result-box').textContent = '';
+    document.getElementById('spin-modal').classList.remove('hidden');
 }
 
-function pickWeightedSlotIndex(slots) {
-    const totalWeight = slots.reduce((sum, s) => sum + Math.max(Number(s.weight) || 0, 0), 0);
-    if (totalWeight <= 0) return Math.floor(Math.random() * slots.length);
-    let rand = Math.random() * totalWeight;
-    for (let i = 0; i < slots.length; i++) {
-        const w = Math.max(Number(slots[i].weight) || 0, 0);
-        if (rand < w) return i;
-        rand -= w;
-    }
-    return 0;
-}
+async function handleSpinWheel() {
+    if (!currentUser || isSpinning) return;
 
-async function spinWheelNow() {
-    if (isWheelSpinning) return;
-    const user = appState.currentUser;
-    const cost = Number(spinConfig.cost) || 0;
-    if (!user || user.points < cost) {
-        showToast(`แต้มสะสมไม่พอสำหรับหมุนวงล้อ (ต้องใช้ ${cost} แต้ม)`);
+    await syncFromCloud();
+    const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
+    if (!cfg.enabled) {
+        showToast('วงล้อลุ้นแต้มปิดให้บริการชั่วคราว');
+        closeModal('spin-modal');
         return;
     }
 
-    isWheelSpinning = true;
+    const spinCost = Number(cfg.cost) || 0;
+    const latestUser = db.users.find(u => u.id === currentUser.id);
+    if (!latestUser || latestUser.points < spinCost) {
+        showToast(`แต้มไม่พอหมุนวงล้อ (ต้องใช้ ${spinCost} แต้ม)`);
+        return;
+    }
+
+    isSpinning = true;
     const btn = document.getElementById('btn-spin-now');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังเสี่ยงโชค...';
-    document.getElementById('spin-result-text').textContent = 'ขอให้โชคดี!';
-
-    const slots = spinConfig.slots;
-    const winIdx = pickWeightedSlotIndex(slots);
-    const prize = slots[winIdx];
-    const prizePoints = Number(prize.points) || 0;
-
-    const targetCenterAngle = winIdx * 60 + 30;
-    const desiredMod = (360 - targetCenterAngle) % 360;
-    const currentMod = currentWheelRotation % 360;
-    const extraDeg = (desiredMod - currentMod + 360) % 360;
-    currentWheelRotation += 1800 + extraDeg;
-
+    const resultBox = document.getElementById('spin-result-box');
     const wheel = document.getElementById('lucky-wheel');
+
+    btn.disabled = true;
+    resultBox.textContent = 'กำลังหมุนลุ้นรางวัล...';
+
+    const prizes = cfg.prizes.map(Number);
+    const weights = cfg.weights.map(w => Math.max(1, Number(w) || 1));
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    let rand = Math.random() * totalWeight;
+    let chosenIdx = 0;
+    for (let i = 0; i < weights.length; i++) {
+        if (rand < weights[i]) {
+            chosenIdx = i;
+            break;
+        }
+        rand -= weights[i];
+    }
+
+    const wonPoints = prizes[chosenIdx];
+    const sliceCenterAngle = chosenIdx * 60 + 30;
+    const targetMod = (360 - sliceCenterAngle) % 360;
+    const currentMod = ((currentWheelRotation % 360) + 360) % 360;
+    const delta = (targetMod - currentMod + 360) % 360;
+
+    currentWheelRotation += 1800 + delta;
     wheel.style.transform = `rotate(${currentWheelRotation}deg)`;
 
-    setTimeout(async () => {
-        const netPoints = Number(user.points) - cost + prizePoints;
-        const { error } = await sb.from('users').update({ points: netPoints }).eq('id', user.id);
+    const netPoints = latestUser.points - spinCost + wonPoints;
 
-        if (!error) {
-            if (cost > 0) {
-                await sb.from('earn_history').insert([{
-                    user_id: user.id,
-                    user_name: user.fullName,
-                    amount: 0,
-                    points_earned: -cost,
-                    note: 'ใช้แต้มหมุนวงล้อนำโชค'
-                }]);
-            }
-            if (prizePoints > 0) {
-                await sb.from('earn_history').insert([{
-                    user_id: user.id,
-                    user_name: user.fullName,
-                    amount: 0,
-                    points_earned: prizePoints,
-                    note: `ถูกรางวัลวงล้อนำโชค (${prize.label})`
-                }]);
-            }
-            await syncAllDataFromCloud();
-            renderMemberDashboard();
+    setTimeout(async () => {
+        await Promise.all([
+            sb.from('users').update({ points: netPoints }).eq('id', latestUser.id),
+            sb.from('point_history').insert([{
+                user_id: latestUser.id,
+                amount: 0,
+                points_earned: wonPoints - spinCost,
+                note: `หมุนวงล้อลุ้นโชค (ใช้ ${spinCost} แต้ม, ได้รับ +${wonPoints} แต้ม)`
+            }])
+        ]);
+
+        await syncFromCloud();
+        renderMemberDashboard();
+
+        document.getElementById('spin-user-points').textContent = netPoints.toLocaleString();
+        if (wonPoints > 0) {
+            resultBox.style.color = 'var(--success-green)';
+            resultBox.innerHTML = `<i class="fa-solid fa-sparkles"></i> ยินดีด้วย! คุณได้รับ +${wonPoints} แต้ม!`;
+            showToast(`หมุนวงล้อได้ +${wonPoints} แต้ม!`);
+        } else {
+            resultBox.style.color = 'var(--danger-red)';
+            resultBox.innerHTML = `เสียดายจัง รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะ!`;
+            showToast('รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะครับ');
         }
 
-        const resultText = prizePoints > 0
-            ? `🎉 ยินดีด้วย! คุณได้รับ ${prize.label}`
-            : `😅 เสียดายจัง! รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะ`;
-        document.getElementById('spin-result-text').textContent = resultText;
-        showToast(resultText);
-
-        isWheelSpinning = false;
+        isSpinning = false;
         btn.disabled = false;
-        btn.innerHTML = cost > 0
-            ? `<i class="fa-solid fa-rotate-right"></i> หมุนอีกครั้ง (-${cost} แต้ม)`
-            : `<i class="fa-solid fa-rotate-right"></i> หมุนอีกครั้งฟรี!`;
+        syncWheelLabelsUI();
     }, 3600);
 }
 
-/* ==========================================================
-   ตั้งค่าวงล้อลุ้นแต้ม (สำหรับแอดมิน)
-   ========================================================== */
-function renderAdminSpinSummary() {
-    const box = document.getElementById('admin-spin-summary-box');
-    if (!box) return;
-    const statusHtml = spinConfig.enabled !== false
-        ? `<span style="color: var(--success-green); font-weight: 700;">เปิดใช้งาน</span>`
-        : `<span style="color: var(--danger-red); font-weight: 700;">ปิดชั่วคราว</span>`;
-    const slotList = spinConfig.slots.map(s => `${s.label} (${s.weight}%)`).join(' • ');
-    box.innerHTML = `
-        <div style="margin-bottom: 4px;">สถานะ: ${statusHtml} | ค่าหมุน: <strong>${spinConfig.cost} แต้ม/ครั้ง</strong></div>
-        <div style="font-size: 12px; color: var(--text-muted);">ช่องรางวัล: ${slotList}</div>
-    `;
-}
+function openTicketModal(redemptionId) {
+    const item = db.redemptions.find(r => r.id === redemptionId);
+    if (!item) return;
 
-function openSpinSettingsModal() {
-    document.getElementById('spin-set-enabled').value = spinConfig.enabled !== false ? '1' : '0';
-    document.getElementById('spin-set-cost').value = spinConfig.cost ?? 3;
+    const reward = db.rewards.find(rw => rw.id === item.reward_id);
+    const code = formatTicketCode(item.id);
 
-    const editor = document.getElementById('spin-slots-editor');
-    editor.innerHTML = spinConfig.slots.map((slot, idx) => `
-        <div class="spin-slot-row">
-            <div class="spin-slot-dot" style="background: ${SLOT_COLORS[idx % SLOT_COLORS.length]};">${idx + 1}</div>
-            <div>
-                <label style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">แต้มที่ได้ (ช่องที่ ${idx + 1})</label>
-                <input type="number" class="spin-slot-points" min="0" value="${slot.points}" required style="padding: 6px 10px; font-size: 13px;">
-            </div>
-            <div>
-                <label style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">น้ำหนักโอกาสออก</label>
-                <input type="number" class="spin-slot-weight" min="1" value="${slot.weight}" required style="padding: 6px 10px; font-size: 13px;">
-            </div>
-        </div>
-    `).join('');
-
-    document.getElementById('spin-settings-modal').classList.remove('hidden');
-}
-
-function resetDefaultSpinSettings() {
-    spinConfig = JSON.parse(JSON.stringify(DEFAULT_SPIN_CONFIG));
-    openSpinSettingsModal();
-    showToast('โหลดค่าเริ่มต้นของวงล้อแล้ว กด "บันทึกการตั้งค่าวงล้อ" เพื่อยืนยัน');
-}
-
-async function saveSpinSettings(e) {
-    e.preventDefault();
-    const enabled = document.getElementById('spin-set-enabled').value === '1';
-    const cost = Math.max(0, parseInt(document.getElementById('spin-set-cost').value, 10) || 0);
-    const pointInputs = document.querySelectorAll('.spin-slot-points');
-    const weightInputs = document.querySelectorAll('.spin-slot-weight');
-
-    const newSlots = [];
-    for (let i = 0; i < pointInputs.length; i++) {
-        const pts = Math.max(0, parseInt(pointInputs[i].value, 10) || 0);
-        const w = Math.max(1, parseInt(weightInputs[i].value, 10) || 1);
-        newSlots.push({
-            label: pts === 0 ? '0 แต้ม' : `+${pts} แต้ม`,
-            points: pts,
-            weight: w
-        });
+    const imgEl = document.getElementById('ticket-reward-img');
+    if (imgEl) {
+        imgEl.src = (reward && reward.image) ? reward.image : 'https://via.placeholder.com/400x200?text=Reward';
     }
 
-    const updatedConfig = { enabled, cost, slots: newSlots };
-    const btn = document.getElementById('btn-save-spin-settings');
-    btn.disabled = true;
-    btn.textContent = 'กำลังบันทึก...';
+    document.getElementById('ticket-reward-name').textContent = reward ? `แลก "${reward.name}"` : 'แลกของรางวัล';
+    document.getElementById('ticket-points-spent').textContent = `ใช้แต้มสะสมไป ${item.points_spent} แต้ม`;
+    document.getElementById('ticket-code').textContent = `รหัสอ้างอิง: ${code}`;
+    document.getElementById('ticket-member-info').textContent = `ผู้แลก: ${currentUser.full_name} (${currentUser.student_id || '-'})`;
+    document.getElementById('ticket-date').textContent = `วัน-เวลาที่แลก: ${formatDateTime(item.created_at)}`;
 
-    const { error } = await sb.from('settings').update({ spin_config: updatedConfig }).eq('id', 1);
-
-    btn.disabled = false;
-    btn.textContent = 'บันทึกการตั้งค่าวงล้อ';
-
-    if (error) {
-        showToast('บันทึกไม่สำเร็จ: ' + error.message + ' (ตรวจสอบคอลัมน์ spin_config ในตาราง settings)');
-        return;
-    }
-
-    spinConfig = updatedConfig;
-    closeModal('spin-settings-modal');
-    renderAdminSpinSummary();
-    showToast('บันทึกการตั้งค่าวงล้อลุ้นแต้มเรียบร้อยแล้ว!');
+    document.getElementById('ticket-modal').classList.remove('hidden');
 }
 
-/* ==========================================================
-   แก้ไขโปรไฟล์ / เปลี่ยนรหัสผ่าน (สำหรับสมาชิก)
-   ========================================================== */
 function openProfileModal() {
-    const user = appState.currentUser;
-    if (!user) return;
-    document.getElementById('prof-phone').value = user.studentId;
-    document.getElementById('prof-fullname').value = user.fullName;
-    document.getElementById('prof-new-pass').value = '';
-    document.getElementById('prof-confirm-pass').value = '';
+    if (!currentUser) return;
+    document.getElementById('prof-fullname').value = currentUser.full_name || '';
+    document.getElementById('prof-phone').value = currentUser.student_id || '';
+    document.getElementById('prof-old-password').value = '';
+    document.getElementById('prof-new-password').value = '';
+    document.getElementById('prof-confirm-password').value = '';
     document.getElementById('profile-modal').classList.remove('hidden');
 }
 
 async function saveMemberProfile(e) {
     e.preventDefault();
-    const user = appState.currentUser;
-    const newFullName = document.getElementById('prof-fullname').value.trim();
-    const newPass = document.getElementById('prof-new-pass').value.trim();
-    const confirmPass = document.getElementById('prof-confirm-pass').value.trim();
-    const btn = document.getElementById('btn-save-profile');
+    if (!currentUser) return;
 
-    if (!newFullName) {
+    const btn = document.getElementById('btn-save-profile');
+    const fullName = document.getElementById('prof-fullname').value.trim().replace(/\s+/g, ' ');
+    const phone = document.getElementById('prof-phone').value.replace(/\D/g, '');
+    const oldPass = document.getElementById('prof-old-password').value.trim();
+    const newPass = document.getElementById('prof-new-password').value.trim();
+    const confirmPass = document.getElementById('prof-confirm-password').value.trim();
+
+    if (!fullName) {
         showToast('กรุณากรอกชื่อ-นามสกุล');
         return;
     }
 
-    if (newPass && newPass !== confirmPass) {
-        showToast('รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน!');
+    if (phone.length < 9 || phone.length > 10) {
+        showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
         return;
+    }
+
+    let updatedPassword = currentUser.password;
+
+    if (oldPass || newPass || confirmPass) {
+        if (!oldPass) {
+            showToast('กรุณากรอกรหัสผ่านเดิมเพื่อยืนยัน');
+            return;
+        }
+        if (oldPass !== currentUser.password) {
+            showToast('รหัสผ่านเดิมไม่ถูกต้อง');
+            return;
+        }
+        if (!newPass) {
+            showToast('กรุณากรอกรหัสผ่านใหม่');
+            return;
+        }
+        if (newPass !== confirmPass) {
+            showToast('รหัสผ่านใหม่และยืนยันรหัสผ่านไม่ตรงกัน');
+            return;
+        }
+        updatedPassword = newPass;
     }
 
     btn.disabled = true;
     btn.textContent = 'กำลังบันทึก...';
 
-    const updatePayload = {
-        full_name: newFullName,
-        username: newFullName
-    };
-    if (newPass) {
-        updatePayload.password = newPass;
+    await syncFromCloud();
+
+    const isNameDuplicate = db.users.some(u =>
+        u.id !== currentUser.id &&
+        ((u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()) ||
+         (u.full_name && u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()))
+    );
+
+    if (isNameDuplicate) {
+        showToast('ไม่สามารถบันทึกได้: ชื่อ-นามสกุลนี้มีผู้ใช้งานแล้ว');
+        btn.disabled = false;
+        btn.textContent = 'บันทึกการเปลี่ยนแปลง';
+        return;
     }
 
-    const { error } = await sb.from('users').update(updatePayload).eq('id', user.id);
+    const isPhoneDuplicate = db.users.some(u =>
+        u.id !== currentUser.id &&
+        (u.student_id && u.student_id.replace(/\D/g, '') === phone)
+    );
+
+    if (isPhoneDuplicate) {
+        showToast('ไม่สามารถบันทึกได้: เบอร์โทรศัพท์นี้ลงทะเบียนในระบบแล้ว');
+        btn.disabled = false;
+        btn.textContent = 'บันทึกการเปลี่ยนแปลง';
+        return;
+    }
+
+    const { error } = await sb.from('users').update({
+        full_name: fullName,
+        username: fullName,
+        student_id: phone,
+        password: updatedPassword
+    }).eq('id', currentUser.id);
 
     btn.disabled = false;
     btn.textContent = 'บันทึกการเปลี่ยนแปลง';
 
     if (error) {
-        showToast('เกิดข้อผิดพลาดในการบันทึกโปรไฟล์: ' + error.message);
+        showToast('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
         return;
     }
 
-    await syncAllDataFromCloud();
-    document.getElementById('nav-user-name').textContent = appState.currentUser.fullName;
+    await syncFromCloud();
+    const updatedUser = db.users.find(u => u.id === currentUser.id);
+    if (updatedUser) {
+        currentUser = updatedUser;
+        document.getElementById('nav-user-name').textContent = updatedUser.full_name;
+    }
+
     closeModal('profile-modal');
     renderMemberDashboard();
-    showToast('อัปเดตข้อมูลโปรไฟล์เรียบร้อยแล้ว!');
+    showToast('บันทึกข้อมูลโปรไฟล์เรียบร้อยแล้ว');
 }
 
-function renderMemberGoalBar() {
-    const userPoints = appState.currentUser.points;
+async function switchMemberTab(tabName, btnElement) {
+    document.querySelectorAll('#member-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#member-dashboard .tab-content').forEach(c => c.classList.remove('active'));
+
+    btnElement.classList.add('active');
+    document.getElementById(`mem-tab-${tabName}`).classList.add('active');
+
+    await syncFromCloud();
+    renderMemberDashboard();
+}
+
+function renderMemberPointsGoal() {
     const goalText = document.getElementById('mem-goal-text');
     const goalPercent = document.getElementById('mem-goal-percent');
     const goalBar = document.getElementById('mem-goal-bar');
     if (!goalText || !goalPercent || !goalBar) return;
 
-    const availableRewards = appState.rewards
-        .filter(r => r.stock > 0)
-        .sort((a, b) => a.pointsRequired - b.pointsRequired);
-
-    if (availableRewards.length === 0) {
-        goalText.textContent = 'ยังไม่มีรายการของรางวัลในขณะนี้';
-        goalPercent.textContent = '-';
-        goalBar.style.width = '0%';
+    const availableRewards = db.rewards.filter(r => r.stock > 0).sort((a, b) => a.points_required - b.points_required);
+    if (!availableRewards.length) {
+        goalText.textContent = 'สะสมแต้มต่อเนื่องเพื่อแลกของรางวัลพิเศษ';
+        goalPercent.textContent = '100%';
+        goalBar.style.width = '100%';
         return;
     }
 
-    const nextReward = availableRewards.find(r => r.pointsRequired > userPoints);
-    if (!nextReward) {
-        goalText.innerHTML = `<i class="fa-solid fa-crown" style="color:#CA8A04;"></i> คุณมีแต้มเพียงพอแลกของรางวัลได้ทุกรายการ!`;
-        goalPercent.textContent = '100%';
-        goalBar.style.width = '100%';
-        goalBar.style.background = 'var(--success-green)';
-    } else {
-        const diff = nextReward.pointsRequired - userPoints;
-        const pct = Math.min(100, Math.round((userPoints / nextReward.pointsRequired) * 100));
-        goalText.textContent = `อีก ${diff} แต้ม แลก "${nextReward.name}" ได้เลย!`;
+    const nextTarget = availableRewards.find(r => r.points_required > currentUser.points);
+    if (nextTarget) {
+        const diff = nextTarget.points_required - currentUser.points;
+        const pct = Math.min(100, Math.round((currentUser.points / nextTarget.points_required) * 100));
+        goalText.textContent = `อีก ${diff} แต้ม แลก "${nextTarget.name}"`;
         goalPercent.textContent = `${pct}%`;
         goalBar.style.width = `${pct}%`;
-        goalBar.style.background = 'var(--primary-blue)';
+    } else {
+        const maxReward = availableRewards[availableRewards.length - 1];
+        goalText.textContent = `แต้มของคุณแลกได้ทุกรายการ (สูงสุด: ${maxReward.name})`;
+        goalPercent.textContent = '100%';
+        goalBar.style.width = '100%';
     }
 }
 
-function setRewardFilter(filter) {
-    rewardFilter = filter;
-    const btnAll = document.getElementById('filter-rew-all');
-    const btnCan = document.getElementById('filter-rew-can');
-    if (btnAll && btnCan) {
-        btnAll.className = filter === 'all' ? 'btn btn-primary' : 'btn btn-outline';
-        btnCan.className = filter === 'can_redeem' ? 'btn btn-primary' : 'btn btn-outline';
+function renderMemberDashboard() {
+    const latestUser = db.users.find(u => u.id === currentUser.id);
+    if (latestUser) currentUser = latestUser;
+
+    document.getElementById('mem-card-name').textContent = currentUser.full_name;
+    document.getElementById('mem-card-id').textContent = `เบอร์โทรศัพท์: ${currentUser.student_id || '-'}`;
+    document.getElementById('mem-current-points').textContent = currentUser.points.toLocaleString();
+    document.getElementById('mem-rate-info').textContent = `ทุกยอดซื้อ ${db.settings.baht_per_point} บาท รับ 1 แต้ม`;
+
+    const tier = getMemberTierInfo(currentUser.id, currentUser.points);
+    const tierBadge = document.getElementById('mem-tier-badge');
+    const tierNext = document.getElementById('mem-tier-next-text');
+    if (tierBadge) {
+        tierBadge.className = `tier-badge ${tier.cssClass}`;
+        tierBadge.innerHTML = `<i class="fa-solid ${tier.icon}"></i> ${tier.label}`;
     }
+    if (tierNext) {
+        tierNext.textContent = tier.nextText;
+    }
+
+    updateCheckinButtonUI();
+    syncWheelLabelsUI();
+    generateMemberBarcode(currentUser.student_id || currentUser.username);
+    renderMemberPointsGoal();
+    renderMemberPromotions();
     renderMemberRewards();
+    renderMemberHistory();
 }
+
+let promoSlideIndex = 0;
+let promoSlideTimer = null;
 
 function renderMemberPromotions() {
     const container = document.getElementById('member-promo-section');
     if (!container) return;
+    const activePromos = (db.promotions || []).filter(p => p.is_active);
 
-    if (promoAutoTimer) clearInterval(promoAutoTimer);
+    if (promoSlideTimer) clearInterval(promoSlideTimer);
 
-    if (appState.promotions.length === 0) {
-        container.classList.add('hidden');
+    if (!activePromos.length) {
+        container.innerHTML = '';
+        container.style.display = 'none';
         return;
     }
 
-    container.classList.remove('hidden');
+    container.style.display = 'block';
     promoSlideIndex = 0;
 
-    const slidesHtml = appState.promotions.map(p => `
+    const slidesHTML = activePromos.map(p => `
         <div class="promo-banner-card">
-            <img src="${p.image || 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800'}" alt="${p.title}">
+            <img src="${p.image}" alt="${p.title}" onerror="this.src='https://via.placeholder.com/800x250?text=Promotion'">
             <div class="promo-overlay">
-                <span class="promo-tag">${p.badge}</span>
+                <span class="promo-tag"><i class="fa-solid fa-fire"></i> ${p.badge}</span>
                 <h4>${p.title}</h4>
-                <p>${p.desc}</p>
+                <p>${p.description}</p>
             </div>
         </div>
     `).join('');
 
-    const navHtml = appState.promotions.length > 1 ? `
-        <button type="button" class="promo-nav-btn promo-prev" onclick="movePromoSlide(-1)">
+    const controlsHTML = activePromos.length > 1 ? `
+        <button class="promo-nav-btn promo-prev" onclick="movePromoSlide(-1)" title="ก่อนหน้า">
             <i class="fa-solid fa-chevron-left"></i>
         </button>
-        <button type="button" class="promo-nav-btn promo-next" onclick="movePromoSlide(1)">
+        <button class="promo-nav-btn promo-next" onclick="movePromoSlide(1)" title="ถัดไป">
             <i class="fa-solid fa-chevron-right"></i>
         </button>
         <div class="promo-dots">
-            ${appState.promotions.map((_, idx) => `
-                <button type="button" class="promo-dot ${idx === 0 ? 'active' : ''}" onclick="goToPromoSlide(${idx})"></button>
+            ${activePromos.map((_, idx) => `
+                <button class="promo-dot ${idx === 0 ? 'active' : ''}" onclick="goToPromoSlide(${idx})"></button>
             `).join('')}
         </div>
     ` : '';
 
     container.innerHTML = `
-        <div class="promo-track" id="promo-track">${slidesHtml}</div>
-        ${navHtml}
+        <div class="promo-track" id="promo-track">${slidesHTML}</div>
+        ${controlsHTML}
     `;
 
-    if (appState.promotions.length > 1) {
-        promoAutoTimer = setInterval(() => movePromoSlide(1), 4500);
+    if (activePromos.length > 1) {
+        promoSlideTimer = setInterval(() => {
+            movePromoSlide(1);
+        }, 4000);
     }
 }
 
-function updatePromoCarouselUI() {
+function movePromoSlide(step) {
+    const track = document.getElementById('promo-track');
+    if (!track) return;
+    const total = track.children.length;
+    if (total <= 1) return;
+
+    promoSlideIndex = (promoSlideIndex + step + total) % total;
+    updatePromoSlideUI();
+}
+
+function goToPromoSlide(index) {
+    promoSlideIndex = index;
+    updatePromoSlideUI();
+}
+
+function updatePromoSlideUI() {
     const track = document.getElementById('promo-track');
     if (!track) return;
     track.style.transform = `translateX(-${promoSlideIndex * 100}%)`;
+
     document.querySelectorAll('.promo-dot').forEach((dot, idx) => {
         dot.classList.toggle('active', idx === promoSlideIndex);
     });
 }
 
-function movePromoSlide(step) {
-    const total = appState.promotions.length;
-    if (total <= 1) return;
-    promoSlideIndex = (promoSlideIndex + step + total) % total;
-    updatePromoCarouselUI();
-}
-
-function goToPromoSlide(index) {
-    promoSlideIndex = index;
-    updatePromoCarouselUI();
-}
-
-function switchMemberTab(tabName, btnEl) {
-    document.querySelectorAll('#member-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
-    btnEl.classList.add('active');
-    document.querySelectorAll('#member-dashboard .tab-content').forEach(c => c.classList.remove('active'));
-    document.getElementById(`mem-tab-${tabName}`).classList.add('active');
+function setRewardFilter(mode) {
+    rewardFilterMode = mode;
+    const btnAll = document.getElementById('filter-rew-all');
+    const btnCan = document.getElementById('filter-rew-can');
+    if (btnAll && btnCan) {
+        btnAll.className = mode === 'all' ? 'btn btn-primary' : 'btn btn-outline';
+        btnCan.className = mode === 'can_redeem' ? 'btn btn-primary' : 'btn btn-outline';
+    }
+    renderMemberRewards();
 }
 
 function renderMemberRewards() {
     const grid = document.getElementById('member-rewards-grid');
-    const userPoints = appState.currentUser.points;
+    grid.innerHTML = '';
 
-    let list = appState.rewards;
-    if (rewardFilter === 'can_redeem') {
-        list = list.filter(r => r.stock > 0 && userPoints >= r.pointsRequired);
-    }
+    const filteredRewards = rewardFilterMode === 'can_redeem'
+        ? db.rewards.filter(r => currentUser.points >= r.points_required && r.stock > 0)
+        : db.rewards;
 
-    if (list.length === 0) {
-        grid.innerHTML = `<div class="card-box" style="grid-column: 1/-1; text-align:center; color:#64748B;">ยังไม่มีรายการของรางวัลที่ตรงกับเงื่อนไข</div>`;
+    if (!filteredRewards.length) {
+        grid.innerHTML = `<div class="card-box" style="grid-column: 1 / -1; text-align: center; color: var(--text-muted);">ยังไม่มีรายการของรางวัลที่แลกได้ในขณะนี้ ลองสะสมแต้มเพิ่มอีกนิดนะครับ!</div>`;
         return;
     }
 
-    grid.innerHTML = list.map(reward => {
-        const canRedeem = userPoints >= reward.pointsRequired && reward.stock > 0;
-        const outOfStock = reward.stock <= 0;
+    filteredRewards.forEach(reward => {
+        const canRedeem = currentUser.points >= reward.points_required && reward.stock > 0;
+        let btnText = 'แลกของรางวัล';
+        if (reward.stock <= 0) btnText = 'ของรางวัลหมด';
+        else if (currentUser.points < reward.points_required) btnText = 'แต้มไม่เพียงพอ';
 
-        return `
-            <div class="reward-card">
-                <img src="${reward.image || 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=500'}" alt="${reward.name}" class="reward-img">
-                <div class="reward-body">
-                    <div>
-                        <span class="reward-badge"><i class="fa-solid fa-star"></i> ใช้ ${reward.pointsRequired} แต้ม</span>
-                        <h4 class="reward-title">${reward.name}</h4>
-                        <p class="reward-desc">${reward.desc}</p>
-                    </div>
-                    <div class="reward-footer">
-                        <span style="font-size:12px; color:#64748B;">คงเหลือ ${reward.stock} สิทธิ์</span>
-                        <button class="btn ${canRedeem ? 'btn-primary' : 'btn-outline'}" 
-                                ${!canRedeem ? 'disabled' : ''} 
-                                onclick="requestRedeem(${reward.id})">
-                            ${outOfStock ? 'สิทธิ์เต็มแล้ว' : (canRedeem ? 'แลกของรางวัล' : 'แต้มไม่พอ')}
-                        </button>
-                    </div>
+        const card = document.createElement('div');
+        card.className = 'reward-card';
+        card.innerHTML = `
+            <img src="${reward.image}" alt="${reward.name}" class="reward-img" onerror="this.src='https://via.placeholder.com/400x200?text=Reward'">
+            <div class="reward-body">
+                <div>
+                    <span class="reward-badge"><i class="fa-solid fa-coins"></i> ใช้ ${reward.points_required} แต้ม</span>
+                    <h4 class="reward-title">${reward.name}</h4>
+                    <p class="reward-desc">${reward.description}</p>
+                </div>
+                <div class="reward-footer">
+                    <small class="text-muted">คงเหลือ: ${reward.stock} ชิ้น</small>
+                    <button class="btn ${canRedeem ? 'btn-primary' : 'btn-outline'}" 
+                            ${!canRedeem ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''} 
+                            onclick="redeemReward(${reward.id})">
+                        ${btnText}
+                    </button>
                 </div>
             </div>
         `;
-    }).join('');
+        grid.appendChild(card);
+    });
 }
 
-async function requestRedeem(rewardId) {
-    const user = appState.currentUser;
-    const reward = appState.rewards.find(r => r.id === rewardId);
+async function redeemReward(rewardId) {
+    await syncFromCloud();
+    const latestUser = db.users.find(u => u.id === currentUser.id);
+    const reward = db.rewards.find(r => r.id === rewardId);
+    if (!reward || !latestUser) return;
 
-    if (!reward || user.points < reward.pointsRequired || reward.stock <= 0) {
-        showToast('ไม่สามารถแลกของรางวัลได้ แต้มสะสมไม่พอหรือสิทธิ์เต็มแล้ว');
+    if (reward.stock <= 0) {
+        showToast('ขออภัย ของรางวัลรายการนี้หมดแล้ว');
+        renderMemberDashboard();
+        return;
+    }
+    if (latestUser.points < reward.points_required) {
+        showToast('แต้มสะสมของคุณไม่เพียงพอ');
+        renderMemberDashboard();
         return;
     }
 
-    if (!confirm(`ยืนยันใช้ ${reward.pointsRequired} แต้ม เพื่อแลก "${reward.name}" หรือไม่?`)) return;
+    if (!confirm(`ยืนยันการใช้ ${reward.points_required} แต้ม เพื่อแลก "${reward.name}" หรือไม่?`)) {
+        return;
+    }
 
-    const newPoints = user.points - reward.pointsRequired;
+    const newPoints = latestUser.points - reward.points_required;
     const newStock = reward.stock - 1;
-    const refCode = 'MUK-' + Math.floor(100000 + Math.random() * 900000);
 
-    const { error: userErr } = await sb.from('users').update({ points: newPoints }).eq('id', user.id);
-    if (userErr) {
-        showToast('เกิดข้อผิดพลาดในการหักแต้ม: ' + userErr.message);
-        return;
-    }
+    const [, , insertRes] = await Promise.all([
+        sb.from('users').update({ points: newPoints }).eq('id', latestUser.id),
+        sb.from('rewards').update({ stock: newStock }).eq('id', reward.id),
+        sb.from('redemptions').insert([{
+            user_id: latestUser.id,
+            reward_id: reward.id,
+            points_spent: reward.points_required,
+            status: 'approved'
+        }]).select().single()
+    ]);
 
-    await sb.from('rewards').update({ stock: newStock }).eq('id', reward.id);
-
-    const { data: insertedRedeem } = await sb.from('redeem_history').insert([{
-        ref_code: refCode,
-        user_id: user.id,
-        user_name: user.fullName,
-        reward_id: reward.id,
-        reward_name: reward.name,
-        points_used: reward.pointsRequired,
-        status: 'approved'
-    }]).select().single();
-
-    await syncAllDataFromCloud();
-    showToast('แลกของรางวัลสำเร็จ! ยื่นหลักฐานรับสินค้าที่หน้าร้านได้เลย');
+    await syncFromCloud();
     renderMemberDashboard();
+    showToast(`แลก "${reward.name}" สำเร็จ! บันทึกประวัติเรียบร้อยแล้ว`);
 
-    if (insertedRedeem) {
-        showTicketModal(insertedRedeem.id);
+    if (insertRes && insertRes.data) {
+        openTicketModal(insertRes.data.id);
     }
 }
 
 function renderMemberHistory() {
-    const userId = appState.currentUser.id;
-
-    const myEarns = appState.earnHistory.filter(h => h.userId === userId);
     const earnTbody = document.getElementById('mem-earn-tbody');
-    earnTbody.innerHTML = myEarns.length ? myEarns.map(item => `
-        <tr>
-            <td>${formatDate(item.createdAt)}</td>
-            <td>${item.note || 'ซื้อสินค้าหน้าร้าน'}</td>
-            <td>${item.amount > 0 ? item.amount.toLocaleString() + ' บาท' : '-'}</td>
-            <td style="color:${item.pointsEarned >= 0 ? 'var(--success-green)' : 'var(--danger-red)'}; font-weight:600;">
-                ${item.pointsEarned >= 0 ? '+' + item.pointsEarned : item.pointsEarned} แต้ม
-            </td>
-        </tr>
-    `).join('') : `<tr><td colspan="4" style="text-align:center;">ยังไม่มีประวัติการสะสมแต้ม</td></tr>`;
+    const myEarnings = db.point_history.filter(h => h.user_id === currentUser.id);
 
-    const myRedeems = appState.redeemHistory.filter(h => h.userId === userId);
-    const redeemTbody = document.getElementById('mem-redeem-tbody');
-    redeemTbody.innerHTML = myRedeems.length ? myRedeems.map(item => {
+    earnTbody.innerHTML = myEarnings.length ? myEarnings.map(item => {
+        const pts = Number(item.points_earned);
+        const ptsDisplay = pts >= 0
+            ? `<strong style="color:var(--success-green);">+${pts} แต้ม</strong>`
+            : `<strong style="color:var(--danger-red);">${pts} แต้ม</strong>`;
         return `
             <tr>
-                <td><strong>${item.refCode}</strong></td>
-                <td>${formatDate(item.createdAt)}</td>
-                <td>${item.rewardName}</td>
-                <td>${item.pointsUsed} แต้ม</td>
-                <td><span class="status-pill status-approved">แลกสำเร็จ (รับสินค้าได้เลย)</span></td>
+                <td>${formatDateTime(item.created_at)}</td>
+                <td>${item.note || 'ซื้อสินค้าภายในร้าน'}</td>
+                <td>${Number(item.amount).toLocaleString()} บาท</td>
+                <td>${ptsDisplay}</td>
+            </tr>
+        `;
+    }).join('') : '<tr><td colspan="4" style="text-align:center;">ยังไม่มีประวัติการสะสมแต้ม</td></tr>';
+
+    const redeemTbody = document.getElementById('mem-redeem-tbody');
+    const myRedemptions = db.redemptions.filter(r => r.user_id === currentUser.id);
+
+    redeemTbody.innerHTML = myRedemptions.length ? myRedemptions.map(item => {
+        const reward = db.rewards.find(rw => rw.id === item.reward_id);
+        const statusMap = {
+            pending: '<span class="status-pill status-approved">แลกสำเร็จแล้ว</span>',
+            approved: '<span class="status-pill status-approved">แลกสำเร็จแล้ว</span>',
+            rejected: '<span class="status-pill status-rejected">ยกเลิก (คืนแต้มแล้ว)</span>'
+        };
+
+        return `
+            <tr>
+                <td><strong>${formatTicketCode(item.id)}</strong></td>
+                <td>${formatDateTime(item.created_at)}</td>
+                <td>${reward ? reward.name : 'ของรางวัลที่ถูกลบ'}</td>
+                <td>-${item.points_spent} แต้ม</td>
+                <td>${statusMap[item.status] || statusMap.approved}</td>
                 <td>
-                    <button class="btn btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="showTicketModal(${item.id})">
-                        <i class="fa-solid fa-ticket"></i> ดูหลักฐาน
+                    <button class="btn btn-outline-sm" onclick="openTicketModal(${item.id})">
+                        <i class="fa-solid fa-image"></i> ดูหลักฐาน
                     </button>
                 </td>
             </tr>
         `;
-    }).join('') : `<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการแลกของรางวัล</td></tr>`;
+    }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการแลกของรางวัล</td></tr>';
 }
 
-function showTicketModal(redeemId) {
-    const item = appState.redeemHistory.find(r => r.id === redeemId);
-    if (!item) return;
-
-    document.getElementById('ticket-ref').textContent = item.refCode;
-    document.getElementById('ticket-reward').textContent = item.rewardName;
-    document.getElementById('ticket-points').textContent = item.pointsUsed;
-    document.getElementById('ticket-time').textContent = formatDate(item.createdAt);
-
-    renderBarcodeSafe('#ticket-barcode', item.refCode, { width: 2, height: 50, fontSize: 13 });
-
-    document.getElementById('ticket-modal').classList.remove('hidden');
+// ==========================================================
+// 2. ระบบผู้ดูแลร้าน (Admin Functions & Barcode POS Scanner)
+// ==========================================================
+function focusPOSBarcodeInput() {
+    setTimeout(() => {
+        const searchInput = document.getElementById('pos-member-search');
+        if (searchInput) searchInput.focus();
+    }, 100);
 }
 
-/* ==========================================================
-   4. ระบบฝั่งผู้ดูแลร้าน (Admin Dashboard)
-   ========================================================== */
-function renderAdminDashboard() {
-    const members = appState.users.filter(u => u.role === 'member');
-    const totalPointsGiven = appState.earnHistory.reduce((sum, item) => sum + (item.pointsEarned > 0 ? item.pointsEarned : 0), 0);
-    const totalSales = appState.earnHistory.reduce((sum, item) => sum + Number(item.amount), 0);
+function clearPOSMember() {
+    const searchInput = document.getElementById('pos-member-search');
+    const hiddenId = document.getElementById('pos-selected-user-id');
+    const statusBox = document.getElementById('pos-member-status');
 
-    document.getElementById('stat-total-members').textContent = members.length;
-    document.getElementById('stat-total-points').textContent = totalPointsGiven.toLocaleString();
-    document.getElementById('stat-total-redemptions').textContent = appState.redeemHistory.length;
-    document.getElementById('stat-total-sales').textContent = totalSales.toLocaleString();
-
-    document.getElementById('setting-baht-per-point').value = appState.settings.bahtPerPoint;
-
-    renderAdminSpinSummary();
-    populatePOSMemberSelect();
-    renderAdminRecentPOS();
-    renderAdminRedemptions();
-    renderAdminPromotions();
-    renderAdminMembers();
-    renderAdminRewards();
-    renderAdminReport();
-}
-
-function switchAdminTab(tabName, btnEl) {
-    document.querySelectorAll('#admin-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
-    btnEl.classList.add('active');
-    document.querySelectorAll('#admin-dashboard .tab-content').forEach(c => c.classList.remove('active'));
-    document.getElementById(`admin-tab-${tabName}`).classList.add('active');
-
-    if (tabName === 'pos') {
-        setTimeout(() => document.getElementById('pos-member-search')?.focus(), 100);
+    if (searchInput) {
+        searchInput.value = '';
+        searchInput.focus();
     }
-}
-
-function populatePOSMemberSelect() {
-    const datalist = document.getElementById('pos-members-datalist');
-    const members = appState.users.filter(u => u.role === 'member');
-    if (datalist) {
-        datalist.innerHTML = members.map(m =>
-            `<option value="${m.studentId} - ${m.fullName} (มี ${m.points} แต้ม)"></option>`
-        ).join('');
-    }
-}
-
-function handlePOSMemberSearch() {
-    const inputEl = document.getElementById('pos-member-search');
-    const hiddenIdEl = document.getElementById('pos-selected-user-id');
-    const statusEl = document.getElementById('pos-member-status');
-    const rawVal = inputEl.value.trim();
-
-    if (!rawVal) {
-        hiddenIdEl.value = '';
-        statusEl.innerHTML = '';
-        return;
-    }
-
-    const members = appState.users.filter(u => u.role === 'member');
-    const exactPhone = rawVal.split(' ')[0].trim();
-
-    const matched = members.find(m => m.studentId === exactPhone || m.studentId === rawVal) ||
-                    members.find(m => `${m.studentId} - ${m.fullName} (มี ${m.points} แต้ม)` === rawVal) ||
-                    members.find(m => m.fullName.toLowerCase() === rawVal.toLowerCase());
-
-    if (matched) {
-        hiddenIdEl.value = matched.id;
-        const tier = calculateMemberTier(matched.id);
-        statusEl.innerHTML = `
-            <div style="background: #DCFCE7; border: 1px solid #86EFAC; color: #166534; padding: 8px 12px; border-radius: 8px; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
-                <span><i class="fa-solid fa-circle-check"></i> <strong>${matched.fullName}</strong> (${matched.studentId})</span>
-                <span class="tier-pill ${tier.cssClass}">${tier.name} • ${matched.points} แต้ม</span>
-            </div>
-        `;
-    } else {
-        hiddenIdEl.value = '';
-        statusEl.innerHTML = `<span style="font-size: 12px; color: var(--danger-red);"><i class="fa-solid fa-circle-exclamation"></i> ยังไม่พบสมาชิกที่ตรงกัน กรุณายิงบาร์โค้ดหรือเลือกรายชื่อ</span>`;
-    }
+    if (hiddenId) hiddenId.value = '';
+    if (statusBox) statusBox.innerHTML = '';
 }
 
 function handlePOSBarcodeKeydown(e) {
     if (e.key === 'Enter') {
         e.preventDefault();
-        handlePOSMemberSearch();
-        const userId = document.getElementById('pos-selected-user-id').value;
-        if (userId) {
-            showToast('สแกนบาร์โค้ดสมาชิกสำเร็จ! กรอกยอดซื้อได้เลย');
-            document.getElementById('pos-amount').focus();
+        handlePOSMemberSearch(true);
+    }
+}
+
+async function switchAdminTab(tabName, btnElement) {
+    document.querySelectorAll('#admin-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#admin-dashboard .tab-content').forEach(c => c.classList.remove('active'));
+
+    btnElement.classList.add('active');
+    document.getElementById(`admin-tab-${tabName}`).classList.add('active');
+
+    await syncFromCloud();
+    renderAdminDashboard();
+
+    if (tabName === 'pos') {
+        focusPOSBarcodeInput();
+    }
+}
+
+function renderAdminDashboard() {
+    const members = db.users.filter(u => u.role === 'member');
+    const totalPointsGiven = db.point_history
+        .filter(h => Number(h.points_earned) > 0)
+        .reduce((sum, h) => sum + Number(h.points_earned), 0);
+    const totalSales = db.point_history.reduce((sum, h) => sum + Number(h.amount), 0);
+
+    document.getElementById('stat-total-members').textContent = members.length.toLocaleString();
+    document.getElementById('stat-total-points').textContent = totalPointsGiven.toLocaleString();
+    document.getElementById('stat-total-redemptions').textContent = db.redemptions.length.toLocaleString();
+    document.getElementById('stat-total-sales').textContent = totalSales.toLocaleString();
+
+    document.getElementById('setting-baht-per-point').value = db.settings.baht_per_point;
+
+    renderSpinSettingsForm();
+    renderPOSMemberSelect();
+    renderRecentPOS();
+    renderAdminRedemptions();
+    renderAdminPromotions();
+    renderAdminMembers();
+    renderAdminRewards();
+    renderAdminReports();
+}
+
+// --- ตั้งค่ารางวัลในวงล้อลุ้นแต้ม (Admin) ---
+function renderSpinSettingsForm() {
+    const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
+    const enabledEl = document.getElementById('spin-cfg-enabled');
+    const costEl = document.getElementById('spin-cfg-cost');
+    if (enabledEl) enabledEl.value = cfg.enabled ? '1' : '0';
+    if (costEl) costEl.value = cfg.cost;
+
+    for (let i = 0; i < 6; i++) {
+        const prizeInput = document.getElementById(`spin-prize-${i}`);
+        const weightInput = document.getElementById(`spin-weight-${i}`);
+        if (prizeInput) prizeInput.value = cfg.prizes[i];
+        if (weightInput) weightInput.value = cfg.weights[i];
+    }
+}
+
+async function handleSaveSpinSettings(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save-spin-cfg');
+    const enabled = document.getElementById('spin-cfg-enabled').value === '1';
+    const cost = Math.max(0, parseInt(document.getElementById('spin-cfg-cost').value) || 0);
+
+    const prizes = [];
+    const weights = [];
+    for (let i = 0; i < 6; i++) {
+        prizes.push(Math.max(0, parseInt(document.getElementById(`spin-prize-${i}`).value) || 0));
+        weights.push(Math.max(1, parseInt(document.getElementById(`spin-weight-${i}`).value) || 1));
+    }
+
+    const newConfig = { enabled, cost, prizes, weights };
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก...';
+
+    const { error } = await sb.from('settings').upsert({
+        setting_key: 'lucky_spin_config',
+        setting_value: JSON.stringify(newConfig)
+    });
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าวงล้อ';
+
+    if (error) {
+        showToast('เกิดข้อผิดพลาดในการบันทึกการตั้งค่าวงล้อ');
+        return;
+    }
+
+    await syncFromCloud();
+    renderSpinSettingsForm();
+    showToast('บันทึกการตั้งค่าวงล้อลุ้นแต้มเรียบร้อยแล้ว!');
+}
+
+// --- ส่วนบันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS) ---
+function renderPOSMemberSelect() {
+    const datalist = document.getElementById('pos-members-datalist');
+    if (!datalist) return;
+    const members = db.users.filter(u => u.role === 'member');
+    datalist.innerHTML = members.map(m =>
+        `<option value="${m.student_id || m.username} | ${m.full_name}">มี ${m.points} แต้ม</option>`
+    ).join('');
+}
+
+function handlePOSMemberSearch(fromScannerEnter = false) {
+    const searchInput = document.getElementById('pos-member-search');
+    const input = searchInput.value.trim();
+    const hiddenId = document.getElementById('pos-selected-user-id');
+    const statusBox = document.getElementById('pos-member-status');
+
+    const rawKeyword = input.split('|')[0].trim().toLowerCase();
+    const cleanDigits = rawKeyword.replace(/\D/g, '');
+
+    const found = db.users.find(u => {
+        if (u.role !== 'member') return false;
+        const dbPhone = (u.student_id || '').replace(/\D/g, '');
+        return (
+            (cleanDigits !== '' && dbPhone === cleanDigits) ||
+            (u.student_id && u.student_id.toLowerCase() === rawKeyword) ||
+            u.username.toLowerCase() === rawKeyword ||
+            `${u.student_id || u.username} | ${u.full_name}`.toLowerCase() === input.toLowerCase()
+        );
+    });
+
+    if (found) {
+        hiddenId.value = found.id;
+        const tier = getMemberTierInfo(found.id, found.points);
+        statusBox.innerHTML = `
+            <div style="background: #DCFCE7; border: 1.5px solid #16A34A; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="font-size: 12px; color: #166534; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> พบข้อมูลสมาชิก (${tier.name})</span>
+                    <div style="font-size: 16px; font-weight: 700; color: #0F172A;">${found.full_name}</div>
+                    <small style="color: #334155;">เบอร์โทร: ${found.student_id || '-'}</small>
+                </div>
+                <div style="text-align: right;">
+                    <span style="font-size: 11px; color: #166534;">แต้มสะสม</span>
+                    <div style="font-size: 22px; font-weight: 700; color: #1E3A8A;">${found.points.toLocaleString()}</div>
+                </div>
+            </div>
+        `;
+
+        if (fromScannerEnter || (cleanDigits.length === 10 && found.student_id === cleanDigits)) {
+            searchInput.value = `${found.student_id || found.username} | ${found.full_name}`;
+            const amountInput = document.getElementById('pos-amount');
+            if (amountInput) {
+                amountInput.focus();
+                amountInput.select();
+            }
+            if (fromScannerEnter) {
+                showToast(`สแกนพบคุณ ${found.full_name} กรอกยอดซื้อได้เลย`);
+            }
+        }
+    } else {
+        hiddenId.value = '';
+        if (input) {
+            statusBox.innerHTML = `<small style="color: var(--danger-red);"><i class="fa-solid fa-magnifying-glass"></i> ${fromScannerEnter ? 'ไม่พบข้อมูลบาร์โค้ดนี้ในระบบสมาชิก' : 'กำลังค้นหาสมาชิก...'}</small>`;
+            if (fromScannerEnter) {
+                showToast('ไม่พบข้อมูลบาร์โค้ดสมาชิกนี้ในระบบ');
+                searchInput.select();
+            }
         } else {
-            showToast('ไม่พบรหัสสมาชิกนี้ในระบบ');
+            statusBox.innerHTML = '';
         }
     }
 }
 
-function clearPOSMember() {
-    document.getElementById('pos-member-search').value = '';
-    document.getElementById('pos-selected-user-id').value = '';
-    document.getElementById('pos-member-status').innerHTML = '';
-    document.getElementById('pos-member-search').focus();
-}
-
 function setQuickAmount(val) {
-    const input = document.getElementById('pos-amount');
-    if (input) {
-        input.value = val;
-        calculatePreviewPoints();
-    }
+    document.getElementById('pos-amount').value = val;
+    calculatePreviewPoints();
 }
 
 function calculatePreviewPoints() {
     const amount = parseFloat(document.getElementById('pos-amount').value) || 0;
-    const rate = appState.settings.bahtPerPoint || 20;
-    const points = Math.floor(amount / rate);
-    document.getElementById('pos-preview-points').textContent = `${points} แต้ม`;
-    return points;
+    const rate = parseInt(db.settings.baht_per_point) || 20;
+    const earned = Math.floor(amount / rate);
+    document.getElementById('pos-preview-points').textContent = `${earned} แต้ม`;
 }
 
 async function handleRecordPurchase(e) {
@@ -1210,704 +1348,740 @@ async function handleRecordPurchase(e) {
     const amount = parseFloat(document.getElementById('pos-amount').value);
     const note = document.getElementById('pos-note').value.trim();
 
-    if (!userId || amount <= 0) {
-        showToast('กรุณายิงบาร์โค้ด/เลือกสมาชิก และระบุยอดซื้อให้ถูกต้อง');
+    if (!userId) {
+        showToast('ไม่พบข้อมูลสมาชิก กรุณายิงบาร์โค้ดหรือเลือกจากรายการ');
+        focusPOSBarcodeInput();
         return;
     }
 
-    const member = appState.users.find(u => u.id === userId);
-    const pointsEarned = calculatePreviewPoints();
-
-    if (!member) return;
-
+    const rate = parseInt(db.settings.baht_per_point) || 20;
+    const pointsEarned = Math.floor(amount / rate);
+    const member = db.users.find(u => u.id === userId);
     const newPoints = member.points + pointsEarned;
 
-    const { error } = await sb.from('users').update({ points: newPoints }).eq('id', member.id);
-    if (error) {
-        showToast('เกิดข้อผิดพลาด: ' + error.message);
-        return;
-    }
+    await Promise.all([
+        sb.from('users').update({ points: newPoints }).eq('id', userId),
+        sb.from('point_history').insert([{
+            user_id: userId,
+            amount: amount,
+            points_earned: pointsEarned,
+            note: note || 'ซื้อสินค้าหน้าร้าน'
+        }])
+    ]);
 
-    await sb.from('earn_history').insert([{
-        user_id: member.id,
-        user_name: member.fullName,
-        amount: amount,
-        points_earned: pointsEarned,
-        note: note || `ซื้อสินค้า ${amount} บาท`
-    }]);
-
-    await syncAllDataFromCloud();
     e.target.reset();
-    clearPOSMember();
+    document.getElementById('pos-selected-user-id').value = '';
+    document.getElementById('pos-member-status').innerHTML = '';
     document.getElementById('pos-preview-points').textContent = '0 แต้ม';
-    showToast(`บันทึกยอดซื้อสำเร็จ! เพิ่ม ${pointsEarned} แต้มให้คุณ ${member.fullName}`);
+
+    await syncFromCloud();
     renderAdminDashboard();
+    showToast(`บันทึกยอดซื้อ ${amount} บาท ให้คุณ ${member.full_name} (+${pointsEarned} แต้ม)`);
+
+    focusPOSBarcodeInput();
 }
 
 async function handleUpdateRate(e) {
     e.preventDefault();
     const newRate = parseInt(document.getElementById('setting-baht-per-point').value);
-    if (newRate >= 1) {
-        const { error } = await sb.from('settings').update({ baht_per_point: newRate }).eq('id', 1);
-        if (error) {
-            showToast('บันทึกไม่สำเร็จ: ' + error.message);
-            return;
-        }
-        appState.settings.bahtPerPoint = newRate;
-        showToast(`อัปเดตอัตราคำนวณแต้มเป็นทุกๆ ${newRate} บาท = 1 แต้ม`);
-        calculatePreviewPoints();
-    }
+    if (newRate < 1) return;
+
+    await sb.from('settings').upsert({ setting_key: 'baht_per_point', setting_value: String(newRate) });
+    await syncFromCloud();
+    calculatePreviewPoints();
+    showToast(`อัปเดตอัตราคำนวณแต้มเป็น ทุก ${newRate} บาท = 1 แต้ม`);
 }
 
-function renderAdminRecentPOS() {
+function renderRecentPOS() {
     const tbody = document.getElementById('admin-recent-pos-tbody');
-    const recent = appState.earnHistory.slice(0, 5);
-    tbody.innerHTML = recent.length ? recent.map(r => `
-        <tr>
-            <td>${r.userName}</td>
-            <td>${r.amount > 0 ? r.amount + ' ฿' : 'โบนัส/ปรับยอด'}</td>
-            <td style="color:${r.pointsEarned >= 0 ? 'var(--success-green)' : 'var(--danger-red)'}; font-weight:600;">
-                ${r.pointsEarned >= 0 ? '+' + r.pointsEarned : r.pointsEarned}
-            </td>
-        </tr>
-    `).join('') : `<tr><td colspan="3" style="text-align:center;">ยังไม่มีรายการ</td></tr>`;
-}
-
-function renderAdminRedemptions() {
-    const tbody = document.getElementById('admin-redemptions-tbody');
-    tbody.innerHTML = appState.redeemHistory.length ? appState.redeemHistory.map(r => {
+    const recent = db.point_history.filter(h => Number(h.amount) > 0).slice(0, 5);
+    tbody.innerHTML = recent.map(item => {
+        const user = db.users.find(u => u.id === item.user_id);
         return `
             <tr>
-                <td><strong>${r.refCode}</strong></td>
-                <td>${formatDate(r.createdAt)}</td>
-                <td>${r.userName}</td>
-                <td>${r.rewardName}</td>
-                <td>${r.pointsUsed} แต้ม</td>
-                <td><span class="status-pill status-approved">แลกสำเร็จ (รับสินค้าแล้ว)</span></td>
-            </tr>
-        `;
-    }).join('') : `<tr><td colspan="6" style="text-align:center;">ยังไม่มีรายการแลกของรางวัล</td></tr>`;
-}
-
-/* ==========================================================
-   ระบบอัปโหลดรูปภาพ (Drag & Drop + บีบอัดภาพอัตโนมัติ)
-   ========================================================== */
-function compressImageToDataURL(file, maxWidth = 800, quality = 0.78) {
-    return new Promise((resolve, reject) => {
-        if (!file || !file.type.startsWith('image/')) {
-            reject(new Error('กรุณาเลือกไฟล์รูปภาพเท่านั้น'));
-            return;
-        }
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
-
-                if (width > maxWidth) {
-                    height = Math.round((height * maxWidth) / width);
-                    width = maxWidth;
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/jpeg', quality));
-            };
-            img.onerror = () => reject(new Error('ไม่สามารถอ่านไฟล์รูปภาพได้'));
-            img.src = event.target.result;
-        };
-        reader.onerror = () => reject(new Error('เกิดข้อผิดพลาดในการโหลดไฟล์'));
-        reader.readAsDataURL(file);
-    });
-}
-
-function setPromoPreview(imageUrl) {
-    const hiddenInput = document.getElementById('promo-image');
-    const previewBox = document.getElementById('promo-preview-box');
-    const previewImg = document.getElementById('promo-preview-img');
-    const dropzone = document.getElementById('promo-dropzone');
-
-    hiddenInput.value = imageUrl || '';
-    if (imageUrl) {
-        previewImg.src = imageUrl;
-        previewBox.classList.remove('hidden');
-        dropzone.classList.add('hidden');
-    } else {
-        previewImg.src = '';
-        previewBox.classList.add('hidden');
-        dropzone.classList.remove('hidden');
-    }
-}
-
-function clearPromoImage() {
-    document.getElementById('promo-file-input').value = '';
-    setPromoPreview('');
-}
-
-async function processPromoImageFile(file) {
-    try {
-        showToast('กำลังประมวลผลรูปภาพแบนเนอร์...');
-        const compressedDataUrl = await compressImageToDataURL(file, 900, 0.8);
-        setPromoPreview(compressedDataUrl);
-        showToast('อัปโหลดรูปภาพแบนเนอร์เรียบร้อย!');
-    } catch (err) {
-        showToast(err.message);
-    }
-}
-
-function handlePromoFileSelect(e) {
-    const file = e.target.files[0];
-    if (file) processPromoImageFile(file);
-}
-
-function setRewardPreview(imageUrl) {
-    const hiddenInput = document.getElementById('rew-edit-image');
-    const previewBox = document.getElementById('rew-preview-box');
-    const previewImg = document.getElementById('rew-preview-img');
-    const dropzone = document.getElementById('rew-dropzone');
-
-    hiddenInput.value = imageUrl || '';
-    if (imageUrl) {
-        previewImg.src = imageUrl;
-        previewBox.classList.remove('hidden');
-        dropzone.classList.add('hidden');
-    } else {
-        previewImg.src = '';
-        previewBox.classList.add('hidden');
-        dropzone.classList.remove('hidden');
-    }
-}
-
-function clearRewardImage() {
-    document.getElementById('rew-file-input').value = '';
-    setRewardPreview('');
-}
-
-async function processRewardImageFile(file) {
-    try {
-        showToast('กำลังประมวลผลรูปภาพของรางวัล...');
-        const compressedDataUrl = await compressImageToDataURL(file, 650, 0.8);
-        setRewardPreview(compressedDataUrl);
-        showToast('อัปโหลดรูปภาพของรางวัลเรียบร้อย!');
-    } catch (err) {
-        showToast(err.message);
-    }
-}
-
-function handleRewardFileSelect(e) {
-    const file = e.target.files[0];
-    if (file) processRewardImageFile(file);
-}
-
-function setupDragAndDropZones() {
-    const zones = [
-        { id: 'promo-dropzone', handler: processPromoImageFile },
-        { id: 'rew-dropzone', handler: processRewardImageFile }
-    ];
-
-    zones.forEach(({ id, handler }) => {
-        const el = document.getElementById(id);
-        if (!el) return;
-
-        ['dragenter', 'dragover'].forEach(evtName => {
-            el.addEventListener(evtName, (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                el.classList.add('dragover');
-            });
-        });
-
-        ['dragleave', 'drop'].forEach(evtName => {
-            el.addEventListener(evtName, (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                el.classList.remove('dragover');
-            });
-        });
-
-        el.addEventListener('drop', (e) => {
-            const files = e.dataTransfer?.files;
-            if (files && files.length > 0) {
-                handler(files[0]);
-            }
-        });
-    });
-}
-
-/* ==========================================================
-   จัดการโปรโมชั่น / แบนเนอร์ (ฝั่งแอดมิน)
-   ========================================================== */
-function renderAdminPromotions() {
-    const grid = document.getElementById('admin-promos-grid');
-    if (!grid) return;
-
-    grid.innerHTML = appState.promotions.length ? appState.promotions.map(p => `
-        <div class="reward-card">
-            <img src="${p.image || 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=500'}" class="reward-img" alt="${p.title}">
-            <div class="reward-body">
-                <div>
-                    <span class="reward-badge">${p.badge}</span>
-                    <h4 class="reward-title">${p.title}</h4>
-                    <p class="reward-desc">${p.desc}</p>
-                </div>
-                <div class="reward-footer">
-                    <span style="font-size:12px; color:#64748B;">แบนเนอร์หน้าร้าน</span>
-                    <div>
-                        <button class="btn btn-secondary" style="padding:5px 10px; font-size:12px;" onclick="openPromoModal(${p.id})">แก้ไข</button>
-                        <button class="btn btn-danger" onclick="deletePromotion(${p.id})">ลบ</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `).join('') : `<div style="grid-column:1/-1; text-align:center; color:#64748B; padding:20px;">ยังไม่มีแบนเนอร์โปรโมชั่น กด "+ เพิ่มแบนเนอร์โปรโมชั่น" ด้านบนได้เลย</div>`;
-}
-
-function openPromoModal(id = null) {
-    document.getElementById('promo-edit-id').value = id || '';
-    document.getElementById('promo-file-input').value = '';
-
-    if (id) {
-        const p = appState.promotions.find(item => item.id === id);
-        document.getElementById('promo-modal-title').textContent = 'แก้ไขแบนเนอร์โปรโมชั่น';
-        document.getElementById('promo-badge').value = p.badge;
-        document.getElementById('promo-title').value = p.title;
-        document.getElementById('promo-desc').value = p.desc;
-        setPromoPreview(p.image || '');
-    } else {
-        document.getElementById('promo-modal-title').textContent = 'เพิ่มแบนเนอร์โปรโมชั่น';
-        document.getElementById('promo-badge').value = 'โปรโมชั่นพิเศษ';
-        document.getElementById('promo-title').value = '';
-        document.getElementById('promo-desc').value = '';
-        setPromoPreview('');
-    }
-    document.getElementById('promo-modal').classList.remove('hidden');
-}
-
-async function savePromotion(e) {
-    e.preventDefault();
-    const id = document.getElementById('promo-edit-id').value;
-    const badge = document.getElementById('promo-badge').value.trim();
-    const title = document.getElementById('promo-title').value.trim();
-    const desc = document.getElementById('promo-desc').value.trim();
-    const image = document.getElementById('promo-image').value.trim() || 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800';
-
-    if (id) {
-        const { error } = await sb.from('promotions').update({
-            badge, title, description: desc, image
-        }).eq('id', parseInt(id));
-
-        if (error) {
-            showToast('แก้ไขโปรโมชั่นไม่สำเร็จ: ' + error.message);
-            return;
-        }
-        showToast('แก้ไขแบนเนอร์โปรโมชั่นเรียบร้อย');
-    } else {
-        const { error } = await sb.from('promotions').insert([{
-            badge, title, description: desc, image
-        }]);
-
-        if (error) {
-            showToast('เพิ่มโปรโมชั่นไม่สำเร็จ: ' + error.message);
-            return;
-        }
-        showToast('เพิ่มแบนเนอร์โปรโมชั่นใหม่สำเร็จ');
-    }
-
-    await syncAllDataFromCloud();
-    closeModal('promo-modal');
-    renderAdminPromotions();
-}
-
-async function deletePromotion(id) {
-    if (confirm('ยืนยันลบแบนเนอร์โปรโมชั่นนี้หรือไม่?')) {
-        await sb.from('promotions').delete().eq('id', id);
-        await syncAllDataFromCloud();
-        renderAdminPromotions();
-        showToast('ลบแบนเนอร์โปรโมชั่นเรียบร้อย');
-    }
-}
-
-/* ==========================================================
-   จัดการสมาชิก & Audit Log (ฝั่งแอดมิน)
-   ========================================================== */
-function renderAdminMembers() {
-    const keyword = document.getElementById('member-search').value.toLowerCase();
-    const members = appState.users.filter(u =>
-        u.role === 'member' &&
-        (u.fullName.toLowerCase().includes(keyword) || u.studentId.includes(keyword))
-    );
-
-    const tbody = document.getElementById('admin-members-tbody');
-    tbody.innerHTML = members.map(m => {
-        const tier = calculateMemberTier(m.id);
-        return `
-            <tr>
-                <td><strong>${m.studentId}</strong></td>
-                <td>${m.fullName}</td>
-                <td><span class="tier-pill ${tier.cssClass}">${tier.name}</span></td>
-                <td><strong style="color:var(--primary-blue);">${m.points}</strong> แต้ม</td>
-                <td>
-                    <button class="btn btn-secondary" style="padding:5px 10px; font-size:12px;" onclick="openMemberModal(${m.id})">
-                        <i class="fa-solid fa-pen"></i> แก้ไข
-                    </button>
-                    <button class="btn btn-danger" onclick="deleteMember(${m.id})">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </td>
+                <td>${user ? user.full_name : 'ไม่พบข้อมูล'}</td>
+                <td>${Number(item.amount).toLocaleString()} ฿</td>
+                <td><strong>+${item.points_earned}</strong></td>
             </tr>
         `;
     }).join('');
 }
 
-function openMemberModal(id = null) {
-    document.getElementById('mem-edit-id').value = id || '';
-    const reasonGroup = document.getElementById('mem-adjust-reason-group');
-    const reasonInput = document.getElementById('mem-edit-reason');
+// --- ส่วนแสดงประวัติการแลกของรางวัลอัตโนมัติ ---
+function renderAdminRedemptions() {
+    const tbody = document.getElementById('admin-redemptions-tbody');
+    tbody.innerHTML = db.redemptions.length ? db.redemptions.map(item => {
+        const user = db.users.find(u => u.id === item.user_id);
+        const reward = db.rewards.find(r => r.id === item.reward_id);
 
-    if (id) {
-        const m = appState.users.find(u => u.id === id);
-        document.getElementById('member-modal-title').textContent = 'แก้ไขข้อมูลสมาชิก';
-        document.getElementById('mem-edit-fullname').value = m.fullName;
-        document.getElementById('mem-edit-studentid').value = m.studentId;
-        document.getElementById('mem-edit-points').value = m.points;
-        document.getElementById('mem-edit-password').value = '';
-        if (reasonGroup) reasonGroup.style.display = 'block';
-        if (reasonInput) reasonInput.value = '';
+        const statusBadge = item.status === 'rejected'
+            ? '<span class="status-pill status-rejected">ยกเลิกแล้ว</span>'
+            : '<span class="status-pill status-approved">แลกสำเร็จอัตโนมัติ</span>';
+
+        return `
+            <tr>
+                <td><strong>${formatTicketCode(item.id)}</strong></td>
+                <td>${formatDateTime(item.created_at)}</td>
+                <td>${user ? `${user.full_name} (${user.student_id || '-'})` : 'ไม่พบสมาชิก'}</td>
+                <td>${reward ? reward.name : 'ไม่พบของรางวัล'}</td>
+                <td>${item.points_spent} แต้ม</td>
+                <td>${statusBadge}</td>
+            </tr>
+        `;
+    }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการแลกของรางวัล</td></tr>';
+}
+
+// ==========================================================
+// ฟังก์ชันช่วยจัดการลากวางและย่อขนาดรูปภาพอัตโนมัติ (Drag & Drop)
+// ==========================================================
+function setupImageDropzone(prefix) {
+    const dropzone = document.getElementById(`${prefix}-dropzone`);
+    const fileInput = document.getElementById(`${prefix}-file-input`);
+    if (!dropzone || !fileInput) return;
+
+    dropzone.onclick = () => fileInput.click();
+    dropzone.ondragover = (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+    };
+    dropzone.ondragleave = () => dropzone.classList.remove('dragover');
+    dropzone.ondrop = (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            processUploadedImage(e.dataTransfer.files[0], prefix);
+        }
+    };
+    fileInput.onchange = (e) => {
+        if (e.target.files && e.target.files[0]) {
+            processUploadedImage(e.target.files[0], prefix);
+        }
+    };
+}
+
+function processUploadedImage(file, prefix) {
+    if (!file.type.startsWith('image/')) {
+        showToast('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxWidth = 900;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+            }
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+
+            const compressed = canvas.toDataURL('image/jpeg', 0.8);
+            setDropzonePreview(prefix, compressed);
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function setDropzonePreview(prefix, imageUrl) {
+    const hiddenInput = document.getElementById(`modal-${prefix}-image`);
+    const previewBox = document.getElementById(`${prefix}-preview-box`);
+    const previewImg = document.getElementById(`${prefix}-preview-img`);
+    const fileInput = document.getElementById(`${prefix}-file-input`);
+
+    if (hiddenInput) hiddenInput.value = imageUrl || '';
+    if (fileInput && !imageUrl) fileInput.value = '';
+
+    if (imageUrl && imageUrl.trim() !== '') {
+        if (previewImg) previewImg.src = imageUrl;
+        if (previewBox) previewBox.style.display = 'block';
     } else {
-        document.getElementById('member-modal-title').textContent = 'เพิ่มสมาชิกใหม่';
-        document.getElementById('mem-edit-fullname').value = '';
-        document.getElementById('mem-edit-studentid').value = '';
-        document.getElementById('mem-edit-points').value = 0;
-        document.getElementById('mem-edit-password').value = '1234';
-        if (reasonGroup) reasonGroup.style.display = 'none';
-    }
-    document.getElementById('member-modal').classList.remove('hidden');
-}
-
-async function saveMember(e) {
-    e.preventDefault();
-    const id = document.getElementById('mem-edit-id').value;
-    const fullName = document.getElementById('mem-edit-fullname').value.trim();
-    const studentId = document.getElementById('mem-edit-studentid').value.trim();
-    const points = parseInt(document.getElementById('mem-edit-points').value);
-    const password = document.getElementById('mem-edit-password').value.trim();
-    const reason = document.getElementById('mem-edit-reason')?.value.trim() || '';
-
-    if (id) {
-        const oldMember = appState.users.find(u => u.id === parseInt(id));
-        const pointDiff = points - (oldMember ? oldMember.points : 0);
-
-        if (pointDiff !== 0 && !reason) {
-            showToast('กรุณาระบุเหตุผลการแก้ไขแต้ม เพื่อเก็บเป็นประวัติตรวจสอบ');
-            return;
-        }
-
-        const updateData = { full_name: fullName, username: fullName, student_id: studentId, points };
-        if (password) updateData.password = password;
-        await sb.from('users').update(updateData).eq('id', parseInt(id));
-
-        if (pointDiff !== 0) {
-            const adminName = appState.currentUser?.fullName || 'แอดมิน';
-            await sb.from('earn_history').insert([{
-                user_id: parseInt(id),
-                user_name: fullName,
-                amount: 0,
-                points_earned: pointDiff,
-                note: `[แอดมินปรับยอดโดย ${adminName}] ${reason}`
-            }]);
-        }
-
-        showToast('บันทึกการแก้ไขสมาชิกเรียบร้อย');
-    } else {
-        if (appState.users.some(u => u.studentId === studentId)) {
-            showToast('เบอร์โทรศัพท์นี้มีในระบบแล้ว');
-            return;
-        }
-        await sb.from('users').insert([{
-            username: fullName,
-            password: password || '1234',
-            full_name: fullName,
-            student_id: studentId,
-            role: 'member',
-            points
-        }]);
-        showToast('เพิ่มสมาชิกใหม่เรียบร้อย');
-    }
-
-    await syncAllDataFromCloud();
-    closeModal('member-modal');
-    renderAdminDashboard();
-}
-
-async function deleteMember(id) {
-    if (confirm('ยืนยันลบสมาชิกคนนี้ออกจากระบบหรือไม่?')) {
-        await sb.from('users').delete().eq('id', id);
-        await syncAllDataFromCloud();
-        renderAdminDashboard();
-        showToast('ลบข้อมูลสมาชิกเรียบร้อย');
+        if (previewBox) previewBox.style.display = 'none';
     }
 }
 
-/* ==========================================================
-   จัดการของรางวัล (ฝั่งแอดมิน)
-   ========================================================== */
-function renderAdminRewards() {
-    const grid = document.getElementById('admin-rewards-grid');
-    grid.innerHTML = appState.rewards.map(r => `
-        <div class="reward-card">
-            <img src="${r.image || 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=500'}" class="reward-img" alt="${r.name}">
+// --- ส่วนจัดการแบนเนอร์โปรโมชั่น (CRUD) ---
+function renderAdminPromotions() {
+    const grid = document.getElementById('admin-promos-grid');
+    if (!grid) return;
+    grid.innerHTML = (db.promotions || []).map(p => `
+        <div class="reward-card" style="${!p.is_active ? 'opacity:0.6;' : ''}">
+            <img src="${p.image}" alt="${p.title}" class="reward-img" onerror="this.src='https://via.placeholder.com/400x200?text=Banner'">
             <div class="reward-body">
                 <div>
-                    <span class="reward-badge">${r.pointsRequired} แต้ม</span>
-                    <h4 class="reward-title">${r.name}</h4>
-                    <p class="reward-desc">${r.desc}</p>
+                    <span class="reward-badge">${p.badge} | ${p.is_active ? 'กำลังแสดง' : 'ซ่อนอยู่'}</span>
+                    <h4 class="reward-title">${p.title}</h4>
+                    <p class="reward-desc">${p.description}</p>
                 </div>
                 <div class="reward-footer">
-                    <span style="font-size:12px;">คงเหลือ: <strong>${r.stock}</strong></span>
-                    <div>
-                        <button class="btn btn-secondary" style="padding:5px 10px; font-size:12px;" onclick="openRewardModal(${r.id})">แก้ไข</button>
-                        <button class="btn btn-danger" onclick="deleteReward(${r.id})">ลบ</button>
-                    </div>
+                    <button class="btn btn-outline-sm" onclick="openPromoModal(${p.id})">
+                        <i class="fa-solid fa-pen"></i> แก้ไข
+                    </button>
+                    <button class="btn btn-danger" onclick="deletePromotion(${p.id})">
+                        <i class="fa-solid fa-trash"></i> ลบ
+                    </button>
                 </div>
             </div>
         </div>
     `).join('');
 }
 
-function openRewardModal(id = null) {
-    document.getElementById('rew-edit-id').value = id || '';
-    document.getElementById('rew-file-input').value = '';
+function openPromoModal(promoId = null) {
+    const modal = document.getElementById('promo-modal');
+    const title = document.getElementById('promo-modal-title');
+    setupImageDropzone('promo');
+
+    if (promoId) {
+        const p = db.promotions.find(item => item.id === promoId);
+        title.textContent = 'แก้ไขแบนเนอร์โปรโมชั่น';
+        document.getElementById('edit-promo-id').value = p.id;
+        document.getElementById('modal-promo-badge').value = p.badge;
+        document.getElementById('modal-promo-title').value = p.title;
+        document.getElementById('modal-promo-desc').value = p.description;
+        document.getElementById('modal-promo-active').value = p.is_active ? '1' : '0';
+        setDropzonePreview('promo', p.image);
+    } else {
+        title.textContent = 'เพิ่มแบนเนอร์โปรโมชั่น';
+        document.getElementById('edit-promo-id').value = '';
+        document.getElementById('modal-promo-badge').value = '';
+        document.getElementById('modal-promo-title').value = '';
+        document.getElementById('modal-promo-desc').value = '';
+        document.getElementById('modal-promo-active').value = '1';
+        setDropzonePreview('promo', '');
+    }
+    modal.classList.remove('hidden');
+}
+
+async function savePromotion(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-promo-id').value;
+    const badge = document.getElementById('modal-promo-badge').value.trim();
+    const title = document.getElementById('modal-promo-title').value.trim();
+    const description = document.getElementById('modal-promo-desc').value.trim();
+    const image = document.getElementById('modal-promo-image').value.trim();
+    const is_active = document.getElementById('modal-promo-active').value === '1';
+
+    if (!image) {
+        showToast('กรุณาอัปโหลดรูปภาพแบนเนอร์ก่อนบันทึก');
+        return;
+    }
 
     if (id) {
-        const r = appState.rewards.find(item => item.id === id);
-        document.getElementById('reward-modal-title').textContent = 'แก้ไขของรางวัล';
-        document.getElementById('rew-edit-name').value = r.name;
-        document.getElementById('rew-edit-desc').value = r.desc;
-        document.getElementById('rew-edit-points').value = r.pointsRequired;
-        document.getElementById('rew-edit-stock').value = r.stock;
-        setRewardPreview(r.image || '');
+        await sb.from('promotions').update({ badge, title, description, image, is_active }).eq('id', parseInt(id));
+        showToast('อัปเดตแบนเนอร์โปรโมชั่นเรียบร้อยแล้ว');
     } else {
-        document.getElementById('reward-modal-title').textContent = 'เพิ่มของรางวัลใหม่';
-        document.getElementById('rew-edit-name').value = '';
-        document.getElementById('rew-edit-desc').value = '';
-        document.getElementById('rew-edit-points').value = 20;
-        document.getElementById('rew-edit-stock').value = 10;
-        setRewardPreview('');
+        await sb.from('promotions').insert([{ badge, title, description, image, is_active }]);
+        showToast('เพิ่มแบนเนอร์โปรโมชั่นใหม่เรียบร้อยแล้ว');
     }
-    document.getElementById('reward-modal').classList.remove('hidden');
+
+    closeModal('promo-modal');
+    await syncFromCloud();
+    renderAdminDashboard();
+}
+
+async function deletePromotion(promoId) {
+    if (!confirm('ยืนยันการลบแบนเนอร์โปรโมชั่นนี้หรือไม่?')) return;
+    await sb.from('promotions').delete().eq('id', promoId);
+    await syncFromCloud();
+    renderAdminDashboard();
+    showToast('ลบแบนเนอร์โปรโมชั่นเรียบร้อยแล้ว');
+}
+
+// --- ส่วนจัดการสมาชิก (CRUD + Audit Log บันทึกประวัติแก้แต้ม) ---
+function renderAdminMembers() {
+    const keyword = document.getElementById('member-search').value.toLowerCase().trim();
+    const tbody = document.getElementById('admin-members-tbody');
+
+    const members = db.users.filter(u =>
+        u.role === 'member' &&
+        (u.full_name.toLowerCase().includes(keyword) ||
+         (u.student_id && u.student_id.toLowerCase().includes(keyword)) ||
+         u.username.toLowerCase().includes(keyword))
+    );
+
+    tbody.innerHTML = members.length ? members.map(m => {
+        const tier = getMemberTierInfo(m.id, m.points);
+        return `
+            <tr>
+                <td>${m.student_id || '-'}</td>
+                <td>${m.full_name}</td>
+                <td><span class="tier-pill ${tier.cssClass}">${tier.name}</span></td>
+                <td><strong>${m.points.toLocaleString()}</strong> แต้ม</td>
+                <td>
+                    <button class="btn btn-outline-sm" onclick="openMemberModal(${m.id})">
+                        <i class="fa-solid fa-pen"></i> แก้ไข
+                    </button>
+                    <button class="btn btn-danger" onclick="deleteMember(${m.id})">
+                        <i class="fa-solid fa-trash"></i> ลบ
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('') : '<tr><td colspan="5" style="text-align:center;">ไม่พบข้อมูลสมาชิก</td></tr>';
+}
+
+function openMemberModal(memberId = null) {
+    const modal = document.getElementById('member-modal');
+    const title = document.getElementById('member-modal-title');
+    const reasonGroup = document.getElementById('member-edit-reason-group');
+    const reasonInput = document.getElementById('modal-mem-reason');
+
+    if (memberId) {
+        const m = db.users.find(u => u.id === memberId);
+        title.textContent = 'แก้ไขข้อมูลสมาชิก';
+        document.getElementById('edit-member-id').value = m.id;
+        document.getElementById('modal-mem-studentid').value = m.student_id || '';
+        document.getElementById('modal-mem-fullname').value = m.full_name;
+        document.getElementById('modal-mem-password').value = m.password;
+        document.getElementById('modal-mem-points').value = m.points;
+        if (reasonGroup) reasonGroup.style.display = 'block';
+        if (reasonInput) reasonInput.value = '';
+    } else {
+        title.textContent = 'เพิ่มสมาชิกใหม่';
+        document.getElementById('edit-member-id').value = '';
+        document.getElementById('modal-mem-studentid').value = '';
+        document.getElementById('modal-mem-fullname').value = '';
+        document.getElementById('modal-mem-password').value = '1234';
+        document.getElementById('modal-mem-points').value = 0;
+        if (reasonGroup) reasonGroup.style.display = 'none';
+    }
+    modal.classList.remove('hidden');
+}
+
+async function saveMember(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-member-id').value;
+    const phone = document.getElementById('modal-mem-studentid').value.replace(/\D/g, '');
+    const fullName = document.getElementById('modal-mem-fullname').value.trim().replace(/\s+/g, ' ');
+    const username = fullName;
+    const password = document.getElementById('modal-mem-password').value.trim();
+    const points = parseInt(document.getElementById('modal-mem-points').value) || 0;
+    const reason = (document.getElementById('modal-mem-reason')?.value || '').trim();
+
+    if (phone.length < 9 || phone.length > 10) {
+        showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
+        return;
+    }
+
+    await syncFromCloud();
+    const currentId = id ? parseInt(id) : null;
+
+    const isNameDuplicate = db.users.some(u =>
+        u.id !== currentId &&
+        ((u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase()) ||
+         (u.full_name && u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()))
+    );
+
+    if (isNameDuplicate) {
+        showToast('ไม่สามารถบันทึกได้: ชื่อ-นามสกุลนี้ซ้ำกับสมาชิกอื่นในระบบ');
+        return;
+    }
+
+    const isPhoneDuplicate = db.users.some(u =>
+        u.id !== currentId &&
+        (u.student_id && u.student_id.replace(/\D/g, '') === phone)
+    );
+
+    if (isPhoneDuplicate) {
+        showToast('ไม่สามารถบันทึกได้: เบอร์โทรศัพท์นี้ซ้ำกับสมาชิกอื่นในระบบ');
+        return;
+    }
+
+    if (currentId) {
+        const oldMember = db.users.find(u => u.id === currentId);
+        const oldPoints = oldMember ? Number(oldMember.points) : 0;
+        const pointDiff = points - oldPoints;
+
+        const { error } = await sb.from('users').update({
+            student_id: phone,
+            full_name: fullName,
+            username,
+            password,
+            points
+        }).eq('id', currentId);
+
+        if (error) {
+            showToast('เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
+            return;
+        }
+
+        if (pointDiff !== 0) {
+            const sign = pointDiff > 0 ? `+${pointDiff}` : `${pointDiff}`;
+            await sb.from('point_history').insert([{
+                user_id: currentId,
+                amount: 0,
+                points_earned: pointDiff,
+                note: `[แอดมินปรับแต้ม ${sign} แต้ม (${oldPoints}→${points})] ${reason || 'แก้ไขผ่านหน้าจัดการสมาชิก'}`
+            }]);
+        }
+
+        showToast('แก้ไขข้อมูลสมาชิกเรียบร้อยแล้ว');
+    } else {
+        const { data: inserted, error } = await sb.from('users').insert([{
+            student_id: phone,
+            full_name: fullName,
+            username,
+            password,
+            role: 'member',
+            points
+        }]).select().single();
+
+        if (error) {
+            showToast('เกิดข้อผิดพลาดในการเพิ่มสมาชิก');
+            return;
+        }
+
+        if (inserted && points > 0) {
+            await sb.from('point_history').insert([{
+                user_id: inserted.id,
+                amount: 0,
+                points_earned: points,
+                note: `[แอดมินปรับแต้ม +${points} แต้ม] เพิ่มสมาชิกใหม่พร้อมแต้มเริ่มต้น`
+            }]);
+        }
+
+        showToast('เพิ่มสมาชิกใหม่เรียบร้อยแล้ว');
+    }
+
+    closeModal('member-modal');
+    await syncFromCloud();
+    renderAdminDashboard();
+}
+
+async function deleteMember(memberId) {
+    if (!confirm('ยืนยันการลบสมาชิกคนนี้หรือไม่? ประวัติที่เกี่ยวข้องจะถูกลบทั้งหมด')) return;
+    await sb.from('users').delete().eq('id', memberId);
+    await syncFromCloud();
+    renderAdminDashboard();
+    showToast('ลบข้อมูลสมาชิกเรียบร้อยแล้ว');
+}
+
+// --- ส่วนจัดการของรางวัล (CRUD) ---
+function renderAdminRewards() {
+    const grid = document.getElementById('admin-rewards-grid');
+    grid.innerHTML = db.rewards.map(r => `
+        <div class="reward-card">
+            <img src="${r.image}" alt="${r.name}" class="reward-img" onerror="this.src='https://via.placeholder.com/400x200?text=Reward'">
+            <div class="reward-body">
+                <div>
+                    <span class="reward-badge">${r.points_required} แต้ม | คงเหลือ ${r.stock} ชิ้น</span>
+                    <h4 class="reward-title">${r.name}</h4>
+                    <p class="reward-desc">${r.description}</p>
+                </div>
+                <div class="reward-footer">
+                    <button class="btn btn-outline-sm" onclick="openRewardModal(${r.id})">
+                        <i class="fa-solid fa-pen"></i> แก้ไข
+                    </button>
+                    <button class="btn btn-danger" onclick="deleteReward(${r.id})">
+                        <i class="fa-solid fa-trash"></i> ลบ
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function openRewardModal(rewardId = null) {
+    const modal = document.getElementById('reward-modal');
+    const title = document.getElementById('reward-modal-title');
+    setupImageDropzone('rew');
+
+    if (rewardId) {
+        const r = db.rewards.find(rw => rw.id === rewardId);
+        title.textContent = 'แก้ไขรายการของรางวัล';
+        document.getElementById('edit-reward-id').value = r.id;
+        document.getElementById('modal-rew-name').value = r.name;
+        document.getElementById('modal-rew-desc').value = r.description;
+        document.getElementById('modal-rew-points').value = r.points_required;
+        document.getElementById('modal-rew-stock').value = r.stock;
+        setDropzonePreview('rew', r.image);
+    } else {
+        title.textContent = 'เพิ่มของรางวัลใหม่';
+        document.getElementById('edit-reward-id').value = '';
+        document.getElementById('modal-rew-name').value = '';
+        document.getElementById('modal-rew-desc').value = '';
+        document.getElementById('modal-rew-points').value = 10;
+        document.getElementById('modal-rew-stock').value = 10;
+        setDropzonePreview('rew', '');
+    }
+    modal.classList.remove('hidden');
 }
 
 async function saveReward(e) {
     e.preventDefault();
-    const id = document.getElementById('rew-edit-id').value;
-    const name = document.getElementById('rew-edit-name').value.trim();
-    const desc = document.getElementById('rew-edit-desc').value.trim();
-    const pointsRequired = parseInt(document.getElementById('rew-edit-points').value);
-    const stock = parseInt(document.getElementById('rew-edit-stock').value);
-    const image = document.getElementById('rew-edit-image').value.trim() || 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=500';
+    const id = document.getElementById('edit-reward-id').value;
+    const name = document.getElementById('modal-rew-name').value.trim();
+    const description = document.getElementById('modal-rew-desc').value.trim();
+    const pointsRequired = parseInt(document.getElementById('modal-rew-points').value);
+    const stock = parseInt(document.getElementById('modal-rew-stock').value);
+    const image = document.getElementById('modal-rew-image').value.trim();
+
+    if (!image) {
+        showToast('กรุณาอัปโหลดรูปภาพของรางวัลก่อนบันทึก');
+        return;
+    }
 
     if (id) {
         await sb.from('rewards').update({
-            name, description: desc, points_required: pointsRequired, stock, image
+            name,
+            description,
+            points_required: pointsRequired,
+            stock,
+            image
         }).eq('id', parseInt(id));
-        showToast('แก้ไขของรางวัลเรียบร้อย');
+        showToast('แก้ไขข้อมูลของรางวัลเรียบร้อยแล้ว');
     } else {
         await sb.from('rewards').insert([{
-            name, description: desc, points_required: pointsRequired, stock, image
+            name,
+            description,
+            points_required: pointsRequired,
+            stock,
+            image
         }]);
-        showToast('เพิ่มของรางวัลใหม่สำเร็จ');
+        showToast('เพิ่มของรางวัลใหม่เรียบร้อยแล้ว');
     }
 
-    await syncAllDataFromCloud();
     closeModal('reward-modal');
-    renderAdminRewards();
+    await syncFromCloud();
+    renderAdminDashboard();
 }
 
-async function deleteReward(id) {
-    if (confirm('ยืนยันลบของรางวัลรายการนี้หรือไม่?')) {
-        await sb.from('rewards').delete().eq('id', id);
-        await syncAllDataFromCloud();
-        renderAdminRewards();
-        showToast('ลบของรางวัลเรียบร้อย');
-    }
+async function deleteReward(rewardId) {
+    if (!confirm('ยืนยันการลบของรางวัลรายการนี้หรือไม่?')) return;
+    await sb.from('rewards').delete().eq('id', rewardId);
+    await syncFromCloud();
+    renderAdminDashboard();
+    showToast('ลบของรางวัลเรียบร้อยแล้ว');
 }
 
-/* ==========================================================
-   รายงานสรุปยอดขายรายวัน/รายเดือน + Audit Log + CSV Export
-   ========================================================== */
+// --- ส่วนรายงานสรุปยอดขายรายวัน/รายเดือน & Audit Log ---
 function setReportPeriod(period) {
     reportPeriod = period;
     ['today', 'week', 'month', 'all'].forEach(p => {
         const btn = document.getElementById(`rep-filter-${p}`);
-        if (btn) btn.className = p === period ? 'btn btn-primary' : 'btn btn-outline';
+        if (btn) {
+            btn.className = p === period ? 'btn btn-primary' : 'btn btn-outline';
+        }
     });
-    renderAdminReport();
+    renderAdminReports();
 }
 
-function filterByReportPeriod(list) {
+function isInSelectedPeriod(isoString) {
+    if (reportPeriod === 'all') return true;
+    if (!isoString) return false;
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return false;
+
     const now = new Date();
-    return list.filter(item => {
-        const d = new Date(item.createdAt);
-        if (reportPeriod === 'today') {
-            return d.toDateString() === now.toDateString();
-        }
-        if (reportPeriod === 'week') {
-            const diffDays = (now - d) / (1000 * 60 * 60 * 24);
-            return diffDays <= 7;
-        }
-        if (reportPeriod === 'month') {
-            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-        }
-        return true;
-    });
+    if (reportPeriod === 'today') {
+        return getLocalDateKey(isoString) === getLocalDateKey();
+    } else if (reportPeriod === 'week') {
+        const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+        return d >= sevenDaysAgo;
+    } else if (reportPeriod === 'month') {
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }
+    return true;
 }
 
-function renderAdminReport() {
+function renderAdminReports() {
     const container = document.getElementById('report-summary-content');
-    const filteredEarns = filterByReportPeriod(appState.earnHistory);
-    const filteredRedeems = filterByReportPeriod(appState.redeemHistory);
-
-    const periodSales = filteredEarns.reduce((s, x) => s + Number(x.amount), 0);
-    const periodPointsGiven = filteredEarns.reduce((s, x) => s + (x.pointsEarned > 0 ? x.pointsEarned : 0), 0);
-    const periodRedeemedPts = filteredRedeems.reduce((s, x) => s + Number(x.pointsUsed), 0);
-
-    const periodLabels = {
+    const periodNames = {
         today: 'วันนี้',
         week: '7 วันล่าสุด',
         month: 'เดือนนี้',
-        all: 'ทั้งหมดตั้งแต่เปิดระบบ'
+        all: 'ทั้งหมด'
     };
 
-    const topMembers = [...appState.users]
-        .filter(u => u.role === 'member')
-        .sort((a, b) => b.points - a.points)
-        .slice(0, 5);
+    const filteredHistory = db.point_history.filter(h => isInSelectedPeriod(h.created_at));
+    const filteredRedemptions = db.redemptions.filter(r => isInSelectedPeriod(r.created_at));
 
-    const auditLogs = appState.earnHistory
-        .filter(e => (e.note || '').includes('[แอดมินปรับยอด'))
-        .slice(0, 10);
+    const periodSales = filteredHistory.reduce((sum, h) => sum + Number(h.amount), 0);
+    const periodOrders = filteredHistory.filter(h => Number(h.amount) > 0).length;
+    const periodPointsGiven = filteredHistory
+        .filter(h => Number(h.points_earned) > 0)
+        .reduce((sum, h) => sum + Number(h.points_earned), 0);
+    const periodRedeemedCount = filteredRedemptions.length;
+
+    const members = db.users.filter(u => u.role === 'member');
+    const topMembers = [...members].sort((a, b) => b.points - a.points).slice(0, 5);
+
+    const auditLogs = db.point_history
+        .filter(h => h.note && h.note.startsWith('[แอดมินปรับแต้ม'))
+        .slice(0, 15);
 
     container.innerHTML = `
-        <div class="report-kpi-grid" style="margin-bottom: 22px;">
+        <div class="report-kpi-grid">
             <div class="report-kpi-box">
-                <span>ยอดขายรวม (${periodLabels[reportPeriod]})</span>
+                <span>ยอดขาย (${periodNames[reportPeriod]})</span>
                 <strong>${periodSales.toLocaleString()} ฿</strong>
-                <small>จาก ${filteredEarns.filter(e => e.amount > 0).length} บิล</small>
+                <small>${periodOrders} บิลขาย</small>
             </div>
             <div class="report-kpi-box">
-                <span>แต้มที่แจกออก (${periodLabels[reportPeriod]})</span>
-                <strong style="color: var(--success-green);">+${periodPointsGiven.toLocaleString()} แต้ม</strong>
-                <small>รวมยอดซื้อและโบนัส</small>
+                <span>แต้มที่แจก (${periodNames[reportPeriod]})</span>
+                <strong style="color: #D97706;">+${periodPointsGiven.toLocaleString()} แต้ม</strong>
+                <small>รวมทุกช่องทาง</small>
             </div>
             <div class="report-kpi-box">
-                <span>แต้มที่ถูกแลกใช้ (${periodLabels[reportPeriod]})</span>
-                <strong style="color: var(--danger-red);">-${periodRedeemedPts.toLocaleString()} แต้ม</strong>
-                <small>จำนวน ${filteredRedeems.length} รายการ</small>
+                <span>แลกของรางวัล (${periodNames[reportPeriod]})</span>
+                <strong style="color: #16A34A;">${periodRedeemedCount.toLocaleString()} ครั้ง</strong>
+                <small>รายการแลกสำเร็จ</small>
             </div>
         </div>
 
-        <h4 style="margin-bottom:10px; color:var(--primary-blue);">
-            <i class="fa-solid fa-ranking-star"></i> 5 อันดับสมาชิกที่มีแต้มสะสมสูงสุด
-        </h4>
-        <table class="data-table" style="margin-bottom: 24px;">
-            <thead>
-                <tr>
-                    <th>อันดับ</th>
-                    <th>ชื่อ-นามสกุล</th>
-                    <th>เบอร์โทรศัพท์</th>
-                    <th>ระดับ</th>
-                    <th>แต้มสะสม</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${topMembers.map((m, i) => {
-                    const tier = calculateMemberTier(m.id);
-                    return `
+        <div style="margin-top: 22px;">
+            <h4 style="color:var(--primary-blue); margin-bottom:10px;"><i class="fa-solid fa-trophy"></i> 5 อันดับสมาชิกที่มีแต้มสะสมสูงสุด</h4>
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
                         <tr>
-                            <td>#${i + 1}</td>
-                            <td>${m.fullName}</td>
-                            <td>${m.studentId}</td>
-                            <td><span class="tier-pill ${tier.cssClass}">${tier.name}</span></td>
-                            <td><strong>${m.points} แต้ม</strong></td>
+                            <th>อันดับ</th>
+                            <th>เบอร์โทรศัพท์</th>
+                            <th>ชื่อ-นามสกุล</th>
+                            <th>ระดับ</th>
+                            <th>แต้มสะสมปัจจุบัน</th>
                         </tr>
-                    `;
-                }).join('')}
-            </tbody>
-        </table>
+                    </thead>
+                    <tbody>
+                        ${topMembers.map((m, idx) => {
+                            const tier = getMemberTierInfo(m.id, m.points);
+                            return `
+                                <tr>
+                                    <td>#${idx + 1}</td>
+                                    <td>${m.student_id || '-'}</td>
+                                    <td>${m.full_name}</td>
+                                    <td><span class="tier-pill ${tier.cssClass}">${tier.name}</span></td>
+                                    <td><strong>${m.points.toLocaleString()} แต้ม</strong></td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
 
-        <h4 style="margin-bottom:10px; color:var(--primary-blue);">
-            <i class="fa-solid fa-shield-halved"></i> ประวัติการแก้ไขแต้มโดยผู้ดูแลร้าน (Audit Log)
-        </h4>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>วัน-เวลา</th>
-                    <th>สมาชิกที่ถูกปรับแต้ม</th>
-                    <th>รายละเอียด & เหตุผล</th>
-                    <th>จำนวนแต้มที่ปรับ</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${auditLogs.length ? auditLogs.map(log => `
-                    <tr>
-                        <td>${formatDate(log.createdAt)}</td>
-                        <td><strong>${log.userName}</strong></td>
-                        <td>${log.note}</td>
-                        <td style="color:${log.pointsEarned >= 0 ? 'var(--success-green)' : 'var(--danger-red)'}; font-weight:700;">
-                            ${log.pointsEarned >= 0 ? '+' + log.pointsEarned : log.pointsEarned} แต้ม
-                        </td>
-                    </tr>
-                `).join('') : `<tr><td colspan="4" style="text-align:center; color:#64748B;">ยังไม่มีประวัติการปรับแก้แต้มโดยแอดมิน</td></tr>`}
-            </tbody>
-        </table>
+        <div style="margin-top: 26px;">
+            <h4 style="color:var(--primary-blue); margin-bottom:10px;"><i class="fa-solid fa-shield-halved"></i> ประวัติการแก้ไขแต้มด้วยมือ (Audit Log)</h4>
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>วัน-เวลา</th>
+                            <th>สมาชิก</th>
+                            <th>จำนวนที่ปรับ</th>
+                            <th>รายละเอียด / เหตุผล</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${auditLogs.length ? auditLogs.map(log => {
+                            const user = db.users.find(u => u.id === log.user_id);
+                            const pts = Number(log.points_earned);
+                            return `
+                                <tr>
+                                    <td>${formatDateTime(log.created_at)}</td>
+                                    <td>${user ? `${user.full_name} (${user.student_id || '-'})` : 'ไม่พบสมาชิก'}</td>
+                                    <td><strong style="color: ${pts >= 0 ? 'var(--success-green)' : 'var(--danger-red)'};">${pts >= 0 ? '+' + pts : pts} แต้ม</strong></td>
+                                    <td>${log.note}</td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="4" style="text-align:center; color: var(--text-muted);">ยังไม่มีประวัติการแก้ไขแต้มด้วยมือ</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     `;
 }
 
 function exportReportCSV() {
-    const filteredEarns = filterByReportPeriod(appState.earnHistory);
-    let csv = '\uFEFFวัน-เวลา,ชื่อสมาชิก,รายการ/หมายเหตุ,ยอดซื้อ(บาท),แต้มที่ได้รับ\n';
-    filteredEarns.forEach(item => {
-        const row = [
-            `"${formatDate(item.createdAt)}"`,
-            `"${item.userName}"`,
-            `"${(item.note || '').replace(/"/g, '""')}"`,
-            item.amount,
-            item.pointsEarned
-        ];
-        csv += row.join(',') + '\n';
+    let csv = '\uFEFFเบอร์โทรศัพท์,ชื่อ-นามสกุล,ระดับสมาชิก,แต้มสะสมปัจจุบัน\n';
+    db.users.filter(u => u.role === 'member').forEach(m => {
+        const tier = getMemberTierInfo(m.id, m.points);
+        csv += `"${m.student_id || '-'}","${m.full_name}","${tier.name}",${m.points}\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `รายงานร้านมักอาชีวะ_${reportPeriod}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = 'muk_rcheewa_members_report.csv';
     a.click();
     URL.revokeObjectURL(url);
-    showToast('ส่งออกไฟล์รายงาน CSV เรียบร้อยแล้ว!');
+    showToast('ส่งออกไฟล์รายงาน CSV สำเร็จ');
 }
 
 function closeModal(modalId) {
     document.getElementById(modalId).classList.add('hidden');
 }
 
-/* ==========================================================
-   เริ่มต้นโหลดข้อมูลเมื่อเปิดหน้าเว็บ (Auto-Login ถ้าระบบจดจำไว้)
-   ========================================================== */
-window.addEventListener('DOMContentLoaded', async () => {
-    setupDragAndDropZones();
-    await syncAllDataFromCloud();
+// ==========================================================
+// ระบบซิงก์ข้อมูลอัตโนมัติแบบเรียลไทม์ (Supabase Realtime)
+// ==========================================================
+let realtimeChannel = null;
 
-    const saved = getSavedSessionUser();
-    if (saved && saved.id) {
-        const foundUser = appState.users.find(u => u.id === saved.id);
-        if (foundUser) {
-            appState.currentUser = foundUser;
-            initAppView();
-        }
-    }
-});
+function startRealtimeSync() {
+    if (realtimeChannel) return;
+
+    realtimeChannel = sb.channel('muk-rcheewa-live')
+        .on('postgres_changes', { event: '*', schema: 'public' }, async (payload) => {
+            if (!currentUser) return;
+
+            const oldPoints = currentUser.points;
+            const ok = await syncFromCloud();
+            if (!ok) return;
+
+            if (currentUser.role === 'admin') {
+                renderAdminDashboard();
+                if (payload.table === 'redemptions' && payload.eventType === 'INSERT' && payload.new) {
+                    const buyer = db.users.find(u => u.id === payload.new.user_id);
+                    const rw = db.rewards.find(r => r.id === payload.new.reward_id);
+
+                    const imgEl = document.getElementById('admin-alert-reward-img');
+                    if (imgEl) {
+                        imgEl.src = (rw && rw.image) ? rw.image : 'https://via.placeholder.com/400x200?text=Reward';
+                    }
+                    document.getElementById('admin-alert-reward-name').textContent = rw ? rw.name : 'ของรางวัล';
+                    document.getElementById('admin-alert-points').textContent = `ใช้แต้มสะสมไป ${payload.new.points_spent} แต้ม`;
+                    document.getElementById('admin-alert-member').textContent = buyer ? buyer.full_name : 'สมาชิก';
+                    document.getElementById('admin-alert-phone').textContent = buyer ? (buyer.student_id || '-') : '-';
+                    document.getElementById('admin-alert-code').textContent = formatTicketCode(payload.new.id);
+                    document.getElementById('admin-alert-time').textContent = formatDateTime(payload.new.created_at);
+
+                    const alertModal = document.getElementById('admin-redeem-alert-modal');
+                    if (alertModal) alertModal.classList.remove('hidden');
+
+                    try {
+                        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(880, ctx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.15);
+                        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start();
+                        osc.stop(ctx.currentTime + 0.4);
+                    } catch (e) {}
+                }
+            } else {
+                renderMemberDashboard();
+                const updatedUser = db.users.find(u => u.id === currentUser.id);
+                if (updatedUser && updatedUser.points > oldPoints) {
+                    const diff = updatedUser.points - oldPoints;
+                    showToast(`คุณได้รับเพิ่ม +${diff} แต้ม!`);
+                }
+            }
+        })
+        .subscribe();
+}
+
+// เริ่มทำงานทันทีที่เปิดหน้าเว็บ: กู้คืนสถานะล็อกอิน + ซิงก์เรียลไทม์
+restoreSession();
+startRealtimeSync();
