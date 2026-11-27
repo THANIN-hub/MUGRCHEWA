@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   style.css (ฉบับสมบูรณ์ รวมแก้ไขหน้าแอดมิน & บัตรสมาชิก)
+   style.css (ฉบับสมบูรณ์ รวมการ์ดเหลืองต้นฉบับ & แก้ไขหน้าแอดมิน)
    ========================================================== */
 
 :root {
@@ -319,7 +319,7 @@ body {
     padding: 0 16px 48px;
 }
 
-#admin-view .container {
+#admin-dashboard.container {
     max-width: 1240px;
 }
 
@@ -369,33 +369,21 @@ body {
 }
 
 /* ==========================================
-   5. บัตรสมาชิกดิจิทัล (Member Hero Card)
+   5. บัตรสมาชิกดิจิทัล (Member Hero Card + การ์ดเหลืองต้นฉบับ)
    ========================================== */
 .member-hero-card {
-    background: linear-gradient(125deg, #0F172A 0%, #1E3A8A 50%, #1D4ED8 100%);
+    background: linear-gradient(135deg, #1E3A8A 0%, #1D4ED8 100%);
     color: #FFFFFF;
     border-radius: 22px;
-    padding: 26px 28px;
+    padding: 24px 26px;
     margin-bottom: 22px;
     display: grid;
-    grid-template-columns: 1.35fr 1fr;
+    grid-template-columns: 1.2fr 1fr;
     align-items: stretch;
     gap: 24px;
-    box-shadow: 0 12px 28px rgba(30, 58, 138, 0.22);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 12px 28px rgba(30, 58, 138, 0.2);
     position: relative;
     overflow: hidden;
-}
-
-.member-hero-card::before {
-    content: "";
-    position: absolute;
-    top: -60px;
-    right: -40px;
-    width: 240px;
-    height: 240px;
-    background: radial-gradient(circle, rgba(250, 204, 21, 0.14) 0%, transparent 70%);
-    pointer-events: none;
 }
 
 .hero-info {
@@ -416,18 +404,17 @@ body {
     font-weight: 700;
     color: #FFFFFF;
     margin: 4px 0 2px;
-    letter-spacing: 0.2px;
 }
 
 .hero-sub {
-    font-size: 13.5px;
+    font-size: 14px;
     color: #DBEAFE;
 }
 
 .btn-edit-profile {
-    background: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.16);
     color: #FFFFFF;
-    border: 1px solid rgba(255, 255, 255, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.3);
     padding: 4px 12px;
     border-radius: 99px;
     font-size: 12px;
@@ -436,7 +423,7 @@ body {
 }
 
 .btn-edit-profile:hover {
-    background: rgba(255, 255, 255, 0.26);
+    background: rgba(255, 255, 255, 0.28);
 }
 
 /* ป้ายระดับสมาชิก (Tier Badges) */
@@ -461,22 +448,21 @@ body {
     background: #FFFFFF;
     color: var(--text-dark);
     border-radius: 14px;
-    padding: 10px 18px;
-    margin: 14px 0;
+    padding: 12px 20px;
+    margin-top: 14px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
-    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.15);
+    transition: transform 0.2s;
     width: fit-content;
     max-width: 100%;
 }
 
 .barcode-card-box:hover {
     transform: translateY(-2px);
-    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.22);
 }
 
 .barcode-card-box svg {
@@ -490,97 +476,133 @@ body {
     margin-top: 2px;
 }
 
-/* แถบเป้าหมายแต้มถัดไป */
+/* การ์ดสีเหลืองฝั่งขวา (ต้นฉบับ) */
+.hero-points {
+    background: #FACC15;
+    color: #0F172A;
+    border-radius: 18px;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 12px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    min-width: 0;
+}
+
+.points-top-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.points-coin-icon {
+    width: 66px;
+    height: 66px;
+    border-radius: 50%;
+    background: #1E3A8A;
+    color: #FACC15;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 10px rgba(30, 58, 138, 0.22);
+}
+
+.points-summary-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+}
+
+.points-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1E293B;
+}
+
+.points-value-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    line-height: 1.05;
+    margin: 2px 0;
+}
+
+.hero-points .points-number {
+    font-size: 46px;
+    font-weight: 800;
+    color: #1E3A8A;
+}
+
+.points-unit {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1E293B;
+}
+
+.points-summary-text small {
+    font-size: 13px;
+    color: #1E293B;
+    font-weight: 500;
+}
+
+/* กล่องแถบเป้าหมายแต้มสีเหลืองอ่อนด้านในการ์ดเหลือง */
 .tier-progress-wrap {
-    margin-top: 4px;
+    background: rgba(255, 255, 255, 0.45);
+    border-radius: 12px;
+    padding: 10px 14px;
     width: 100%;
-    max-width: 440px;
 }
 
 .tier-progress-label {
     display: flex;
     justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
     font-size: 12.5px;
-    color: #E0E7FF;
-    margin-bottom: 6px;
+    font-weight: 600;
+    color: #1E293B;
+    margin-bottom: 7px;
 }
 
 .tier-progress-track {
     width: 100%;
     height: 8px;
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(30, 58, 138, 0.18);
     border-radius: 99px;
     overflow: hidden;
 }
 
 .tier-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #FDE047, #F59E0B);
+    background: #1E3A8A;
     border-radius: 99px;
     transition: width 0.4s ease;
 }
 
-/* ฝั่งขวาบัตรสมาชิก */
-.hero-points {
-    background: rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 18px;
-    padding: 20px 22px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    align-items: center;
-    text-align: center;
-    min-width: 0;
-}
-
-.hero-points > span {
-    font-size: 13.5px;
-    font-weight: 500;
-    color: #DBEAFE;
-    letter-spacing: 0.3px;
-}
-
-.hero-points .points-number {
-    font-size: 56px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--accent-yellow);
-    text-shadow: 0 4px 16px rgba(250, 204, 21, 0.28);
-    margin: 6px 0;
-}
-
-.hero-points > small {
-    font-size: 12.5px;
-    color: #CBD5E1;
-    background: rgba(15, 23, 42, 0.25);
-    padding: 3px 12px;
-    border-radius: 99px;
-}
-
-.hero-points > div {
+/* แถวปุ่ม 2 ชั้นด้านล่างการ์ดเหลือง */
+.hero-action-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
     width: 100%;
-    display: grid !important;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px !important;
-    margin-top: 14px !important;
 }
 
 .btn-checkin,
 .btn-cal-view,
 .btn-spin-wheel {
-    border: none;
     border-radius: 10px;
-    padding: 9px 8px;
-    font-size: 12px;
+    padding: 9px 12px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
-    white-space: nowrap;
+    gap: 6px;
     transition: transform 0.15s, background 0.2s;
 }
 
@@ -591,29 +613,39 @@ body {
 }
 
 .btn-checkin {
-    background: #22C55E;
+    background: #16A34A;
     color: #FFFFFF;
+    border: none;
 }
 
 .btn-checkin.checked {
-    background: rgba(255, 255, 255, 0.16);
-    color: #E2E8F0;
+    background: #E2E8F0;
+    color: #475569;
+    border: 1px solid #CBD5E1;
     cursor: default;
 }
 
 .btn-cal-view {
-    background: rgba(255, 255, 255, 0.16);
-    color: #FFFFFF;
+    background: #FFFFFF;
+    color: #1E3A8A;
+    border: 1.5px solid #1E3A8A;
 }
 
 .btn-cal-view:hover {
-    background: rgba(255, 255, 255, 0.26);
+    background: #EFF6FF;
 }
 
 .btn-spin-wheel {
-    background: var(--accent-yellow);
-    color: var(--text-dark);
-    box-shadow: 0 4px 12px rgba(250, 204, 21, 0.25);
+    grid-column: 1 / -1;
+    background: linear-gradient(90deg, #1E3A8A 0%, #2563EB 100%);
+    color: #FFFFFF;
+    border: none;
+    padding: 10px 14px;
+    box-shadow: 0 4px 12px rgba(30, 58, 138, 0.25);
+}
+
+.btn-spin-wheel i {
+    color: #FACC15;
 }
 
 /* ==========================================
@@ -763,11 +795,11 @@ body {
     box-shadow: 0 4px 10px rgba(30, 58, 138, 0.2);
 }
 
-#admin-view .sub-nav {
+#admin-dashboard .sub-nav {
     gap: 6px;
 }
 
-#admin-view .sub-nav-btn {
+#admin-dashboard .sub-nav-btn {
     padding: 8px 13px;
     font-size: 13px;
     white-space: nowrap;
@@ -912,7 +944,7 @@ body {
     align-items: start;
 }
 
-#admin-view .grid-2-col > .card-box {
+#admin-dashboard .grid-2-col > .card-box {
     min-width: 0;
     width: 100%;
     overflow: hidden;
@@ -1336,12 +1368,6 @@ body {
     .member-hero-card {
         grid-template-columns: 1fr;
         padding: 20px;
-    }
-
-    .hero-points {
-        align-items: center;
-        text-align: center;
-        width: 100%;
     }
 
     .grid-2-col,

@@ -7,7 +7,7 @@
     <!-- Google Fonts: Prompt -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- JsBarcode Library สำหรับสร้างบาร์โค้ดรหัสสมาชิก -->
@@ -113,22 +113,42 @@
         <main id="member-dashboard" class="container hidden">
             <!-- บัตรสมาชิกดิจิทัล & ยอดแต้มคงเหลือ -->
             <div class="member-hero-card">
+                <!-- ฝั่งซ้าย: ข้อมูลสมาชิก & บาร์โค้ด -->
                 <div class="hero-info">
-                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px;">
-                        <p class="hero-greeting" style="margin-bottom: 0;">บัตรสมาชิกดิจิทัล</p>
-                        <span id="mem-tier-badge" class="tier-badge tier-member"><i class="fa-solid fa-medal"></i> ระดับ MEMBER</span>
-                        <button type="button" class="btn-edit-profile" onclick="openProfileModal()">
-                            <i class="fa-solid fa-user-pen"></i> แก้ไขโปรไฟล์
-                        </button>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;">
+                            <p class="hero-greeting" style="margin-bottom: 0;">บัตรสมาชิกดิจิทัล</p>
+                            <span id="mem-tier-badge" class="tier-badge tier-member"><i class="fa-solid fa-medal"></i> ระดับ MEMBER</span>
+                            <button type="button" class="btn-edit-profile" onclick="openProfileModal()">
+                                <i class="fa-solid fa-user-pen"></i> แก้ไขโปรไฟล์
+                            </button>
+                        </div>
+                        <h2 id="mem-card-name">ชื่อสมาชิก</h2>
+                        <p id="mem-card-id" class="hero-sub">เบอร์โทรศัพท์: -</p>
+                        <small id="mem-tier-next-text" style="display: block; color: #FDE68A; font-size: 12.5px; margin-top: 2px;"></small>
                     </div>
-                    <h2 id="mem-card-name">ชื่อสมาชิก</h2>
-                    <p id="mem-card-id" class="hero-sub">เบอร์โทรศัพท์: -</p>
-                    <small id="mem-tier-next-text" style="display: block; color: #FDE68A; font-size: 12.5px; margin-top: 2px;"></small>
 
                     <!-- กล่องแสดงบาร์โค้ดรหัสสมาชิกสำหรับยิงสแกนหน้าร้าน -->
                     <div class="barcode-card-box" onclick="openMemberBarcodeModal()" title="คลิกเพื่อขยายบาร์โค้ดให้พนักงานสแกน">
                         <svg id="member-barcode"></svg>
                         <span><i class="fa-solid fa-expand"></i> แตะเพื่อขยายบาร์โค้ดสแกนสะสมแต้ม</span>
+                    </div>
+                </div>
+
+                <!-- ฝั่งขวา: การ์ดสีเหลืองแสดงแต้มสะสมปัจจุบัน + แถบความคืบหน้า + ปุ่มเช็กอินและวงล้อ -->
+                <div class="hero-points">
+                    <div class="points-top-row">
+                        <div class="points-coin-icon">
+                            <i class="fa-solid fa-coins"></i>
+                        </div>
+                        <div class="points-summary-text">
+                            <span class="points-title">แต้มสะสมปัจจุบันของคุณ</span>
+                            <div class="points-value-line">
+                                <span class="points-number" id="mem-current-points">0</span>
+                                <span class="points-unit">แต้ม</span>
+                            </div>
+                            <small id="mem-rate-info">ทุกยอดซื้อ 20 บาท รับ 1 แต้ม</small>
+                        </div>
                     </div>
 
                     <!-- แถบเป้าหมายแต้มถัดไป (Progress Bar) -->
@@ -141,20 +161,17 @@
                             <div id="mem-goal-bar" class="tier-progress-fill" style="width: 0%;"></div>
                         </div>
                     </div>
-                </div>
-                <div class="hero-points">
-                    <span>แต้มสะสมคงเหลือ</span>
-                    <div class="points-number" id="mem-current-points">0</div>
-                    <small id="mem-rate-info">ทุกยอดซื้อ 20 บาท รับ 1 แต้ม</small>
-                    <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; justify-content: flex-end;">
+
+                    <!-- ปุ่มเช็กอิน, ปฏิทินเช็กอิน และวงล้อลุ้นแต้มมหาสนุก -->
+                    <div class="hero-action-buttons">
                         <button type="button" id="btn-daily-checkin" class="btn-checkin" onclick="handleDailyCheckin()">
                             <i class="fa-solid fa-calendar-check"></i> เช็กอิน (+1 แต้ม)
                         </button>
                         <button type="button" class="btn-cal-view" onclick="openCheckinCalendarModal()" title="ดูปฏิทินการเช็กอิน">
-                            <i class="fa-solid fa-calendar-days"></i> ปฏิทิน
+                            <i class="fa-solid fa-calendar-days"></i> ปฏิทินเช็กอิน
                         </button>
                         <button type="button" id="btn-open-lucky-spin" class="btn-spin-wheel" onclick="openLuckySpinModal()">
-                            <i class="fa-solid fa-dharmachakra"></i> วงล้อลุ้นแต้ม
+                            <i class="fa-solid fa-dharmachakra"></i> วงล้อลุ้นแต้มมหาสนุก
                         </button>
                     </div>
                 </div>
