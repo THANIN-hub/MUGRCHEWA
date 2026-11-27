@@ -111,7 +111,8 @@ function switchAuthTab(tab) {
 async function handleLogin(e) {
     e.preventDefault();
     const btn = document.getElementById('btn-login-submit');
-    const username = document.getElementById('login-username').value.trim().replace(/\s+/g, ' ');
+    const rawInput = document.getElementById('login-username').value.trim();
+    const cleanPhone = rawInput.replace(/\D/g, '');
     const password = document.getElementById('login-password').value.trim();
 
     btn.disabled = true;
@@ -122,12 +123,19 @@ async function handleLogin(e) {
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ';
 
-    const user = db.users.find(u =>
-        u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase() &&
-        u.password === password
-    );
+    const user = db.users.find(u => {
+        if (u.password !== password) return false;
+        // กรณีเป็นบัญชีแอดมิน ให้ใช้ username ล็อกอินได้ตามปกติ
+        if (u.role === 'admin') {
+            return u.username.toLowerCase() === rawInput.toLowerCase();
+        }
+        // กรณีเป็นสมาชิก ให้ตรวจสอบจากเบอร์โทรศัพท์ (student_id)
+        const dbPhone = (u.student_id || '').replace(/\D/g, '');
+        return cleanPhone !== '' && dbPhone === cleanPhone;
+    });
+
     if (!user) {
-        showToast('ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง');
+        showToast('เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง');
         return;
     }
 
@@ -225,7 +233,7 @@ async function handleRegister(e) {
     e.target.reset();
     showToast(`สมัครสมาชิกสำเร็จ! ได้รับโบนัส ${bonus} แต้ม`);
 
-    document.getElementById('login-username').value = username;
+    document.getElementById('login-username').value = phone;
     document.getElementById('login-password').value = password;
     await handleLogin(new Event('submit'));
 }
