@@ -1300,3 +1300,53 @@ body {
         font-size: 17px;
     }
 }
+/* ==========================================
+   แก้ไข Layout หน้าแอดมิน & ช่องตั้งค่าวงล้อล้นกรอบ
+   ========================================== */
+
+/* ขยายความกว้าง Container หน้าแอดมินให้พอดีกับ 7 แท็บ */
+#admin-view .container {
+    max-width: 1240px;
+}
+
+/* บังคับให้กล่อง 2 คอลัมน์ไม่ขยายเกิน 50% */
+#admin-view .grid-2-col > .card-box {
+    min-width: 0;
+    width: 100%;
+    overflow: hidden;
+}
+
+/* แก้ไขช่องตั้งค่าวงล้อ 6 ช่องไม่ให้ล้นออกนอกกรอบ */
+.spin-slot-cfg-box {
+    min-width: 0;
+    width: 100%;
+    overflow: hidden;
+}
+
+.spin-slot-cfg-box input {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 6px 8px !important;
+    font-size: 13px !important;
+    border: 1.5px solid var(--border-color);
+    border-radius: 8px;
+}
+
+/* หากข้างใน .spin-slot-cfg-box จัดเรียงด้วย flex หรือ grid ให้หดตัวได้ */
+.spin-slot-cfg-box > div {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px !important;
+    width: 100%;
+}
+
+/* จัดปุ่มแท็บเมนูย่อยของแอดมินให้กระชับ เรียงแถวเดียวสวยๆ */
+#admin-view .sub-nav {
+    gap: 6px;
+}
+
+#admin-view .sub-nav-btn {
+    padding: 8px 13px;
+    font-size: 13px;
+    white-space: nowrap;
+}
