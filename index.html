@@ -44,9 +44,14 @@
                     <label>เบอร์โทรศัพท์</label>
                     <input type="text" id="login-username" required placeholder="กรอกเบอร์โทรศัพท์ที่ใช้สมัคร">
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom: 8px;">
                     <label>รหัสผ่าน (Password)</label>
                     <input type="password" id="login-password" required placeholder="กรอกรหัสผ่าน">
+                </div>
+                <div style="text-align: right; margin-bottom: 16px;">
+                    <a href="javascript:void(0)" onclick="openForgotModal()" style="font-size: 13px; color: var(--primary-blue); text-decoration: none; font-weight: 500;">
+                        <i class="fa-solid fa-key"></i> ลืมรหัสผ่าน?
+                    </a>
                 </div>
                 <button type="submit" id="btn-login-submit" class="btn btn-primary btn-block">
                     <i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ
@@ -115,25 +120,39 @@
                             <h2 id="mem-card-name">ชื่อสมาชิก</h2>
                             <p id="mem-card-id">เบอร์โทรศัพท์: -</p>
                         </div>
-                        <div id="member-qrcode" class="qr-mock" title="ให้พนักงานสแกนเพื่อสะสมแต้ม"></div>
+                        <div style="text-align: center;">
+                            <div id="member-qrcode" class="qr-mock" onclick="openMemberQRModal()" style="cursor: pointer;" title="แตะเพื่อขยาย QR Code"></div>
+                            <small style="font-size: 10px; opacity: 0.85; display: block; margin-top: 2px;">แตะขยาย QR</small>
+                        </div>
                     </div>
                     <div class="card-bottom" style="align-items: center; gap: 8px; flex-wrap: wrap;">
                         <span>ร้านมักอาชีวะ วิทยาลัยอาชีวศึกษามหาสารคาม</span>
-                       <button type="button" onclick="openProfileModal()" style="background: #FACC15; color: #1E3A8A; font-weight: 600; border: none; border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);">
+                        <button type="button" onclick="openProfileModal()" style="background: #FACC15; color: #1E3A8A; font-weight: 600; border: none; border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);">
                             <i class="fa-solid fa-user-pen"></i> แก้ไขโปรไฟล์ / รหัสผ่าน
                         </button>
                     </div>
                 </div>
 
-                <!-- กล่องแสดงแต้มสะสมสีเหลืองเด่นชัด -->
-                <div class="points-highlight-card">
-                    <div class="points-icon">
-                        <i class="fa-solid fa-coins"></i>
+                <!-- กล่องแสดงแต้มสะสมสีเหลืองเด่นชัด + แถบเป้าหมาย -->
+                <div class="points-highlight-card" style="flex-direction: column; align-items: stretch; justify-content: center; gap: 14px;">
+                    <div style="display: flex; align-items: center; gap: 18px;">
+                        <div class="points-icon">
+                            <i class="fa-solid fa-coins"></i>
+                        </div>
+                        <div class="points-info">
+                            <span>แต้มสะสมปัจจุบันของคุณ</span>
+                            <div class="points-number"><span id="mem-current-points">0</span> <small>แต้ม</small></div>
+                            <p id="mem-rate-info">ทุกยอดซื้อ 20 บาท รับ 1 แต้ม</p>
+                        </div>
                     </div>
-                    <div class="points-info">
-                        <span>แต้มสะสมปัจจุบันของคุณ</span>
-                        <div class="points-number"><span id="mem-current-points">0</span> <small>แต้ม</small></div>
-                        <p id="mem-rate-info">ทุกยอดซื้อ 20 บาท รับ 1 แต้ม</p>
+                    <div id="mem-goal-box" style="background: rgba(255,255,255,0.65); padding: 10px 14px; border-radius: 10px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--primary-blue); margin-bottom: 5px;">
+                            <span id="mem-goal-text">กำลังคำนวณเป้าหมาย...</span>
+                            <span id="mem-goal-percent">0%</span>
+                        </div>
+                        <div style="width: 100%; height: 8px; background: rgba(30, 58, 138, 0.15); border-radius: 99px; overflow: hidden;">
+                            <div id="mem-goal-bar" style="width: 0%; height: 100%; background: var(--primary-blue); border-radius: 99px; transition: width 0.4s ease;"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -147,15 +166,21 @@
                     <i class="fa-solid fa-clock-rotate-left"></i> ประวัติการสะสมแต้ม
                 </button>
                 <button class="sub-nav-btn" onclick="switchMemberTab('redeem-history', this)">
-                    <i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัล
+                    <i class="fa-solid fa-receipt"></i> ประวัติการแลก / คูปองของฉัน
                 </button>
             </div>
 
             <!-- แท็บรายการของรางวัล -->
             <div id="mem-tab-rewards" class="tab-content active">
-                <div class="section-header">
-                    <h3><i class="fa-solid fa-gift"></i> รายการของรางวัล</h3>
-                    <p>เลือกของรางวัลที่ต้องการและกดแลกแต้มได้ทันที</p>
+                <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h3><i class="fa-solid fa-gift"></i> รายการของรางวัล</h3>
+                        <p>เลือกของรางวัลที่ต้องการและกดแลกแต้มได้ทันที</p>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" id="filter-rew-all" class="btn btn-primary" style="padding: 7px 14px; font-size: 13px;" onclick="setRewardFilter('all')">ทั้งหมด</button>
+                        <button type="button" id="filter-rew-can" class="btn btn-outline" style="padding: 7px 14px; font-size: 13px;" onclick="setRewardFilter('can_redeem')">แลกได้ตอนนี้</button>
+                    </div>
                 </div>
                 <div id="member-rewards-grid" class="rewards-grid"></div>
             </div>
@@ -183,15 +208,17 @@
             <!-- แท็บประวัติการแลกของรางวัล -->
             <div id="mem-tab-redeem-history" class="tab-content">
                 <div class="card-box">
-                    <h3><i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัล</h3>
+                    <h3><i class="fa-solid fa-receipt"></i> ประวัติการแลกและคูปองรับของรางวัล</h3>
                     <div class="table-responsive">
                         <table class="data-table">
                             <thead>
                                 <tr>
-                                    <th>วัน-เวลาที่ขอแลก</th>
+                                    <th>รหัสคูปอง</th>
+                                    <th>วัน-เวลา</th>
                                     <th>ของรางวัล</th>
                                     <th>แต้มที่ใช้</th>
                                     <th>สถานะ</th>
+                                    <th>จัดการ / คูปอง</th>
                                 </tr>
                             </thead>
                             <tbody id="mem-redeem-tbody"></tbody>
@@ -236,6 +263,9 @@
                     </div>
                 </div>
             </div>
+
+            <!-- กล่องแจ้งเตือนคำขอรีเซ็ตรหัสผ่าน (แสดงอัตโนมัติเมื่อมีสมาชิกแจ้งลืมรหัส) -->
+            <div id="admin-reset-alerts" class="card-box hidden" style="margin-bottom: 20px; border-left: 6px solid var(--danger-red); background: #FEF2F2;"></div>
 
             <!-- เมนูย่อยฝั่งแอดมิน -->
             <div class="sub-nav">
@@ -335,6 +365,7 @@
                         <table class="data-table">
                             <thead>
                                 <tr>
+                                    <th>รหัสคูปอง</th>
                                     <th>วัน-เวลา</th>
                                     <th>ชื่อสมาชิก</th>
                                     <th>ของรางวัล</th>
@@ -421,6 +452,69 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Modal ลืมรหัสผ่าน (แจ้งรีเซ็ตกับทางร้าน) -->
+    <div id="forgot-modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-key"></i> แจ้งลืมรหัสผ่าน</h3>
+                <button class="close-btn" onclick="closeModal('forgot-modal')">&times;</button>
+            </div>
+            <form onsubmit="handleForgotPassword(event)">
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+                    กรอกเบอร์โทรศัพท์ที่ใช้สมัครสมาชิก ระบบจะส่งคำขอไปยังหน้าเคาน์เตอร์ร้านมักอาชีวะเพื่อรีเซ็ตรหัสผ่านเป็น <strong>1234</strong> ให้ทันที
+                </p>
+                <div class="form-group">
+                    <label>เบอร์โทรศัพท์ที่ลงทะเบียนไว้</label>
+                    <input type="tel" id="forgot-phone" required maxlength="10" placeholder="เช่น 0812345678">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeModal('forgot-modal')">ยกเลิก</button>
+                    <button type="submit" id="btn-forgot-submit" class="btn btn-primary">ส่งคำขอรีเซ็ต</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal ขยาย QR Code สมาชิกเต็มจอ -->
+    <div id="qr-modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 360px; text-align: center;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-qrcode"></i> บัตรสมาชิกดิจิทัล</h3>
+                <button class="close-btn" onclick="closeModal('qr-modal')">&times;</button>
+            </div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">แสดง QR Code นี้ให้พนักงานสแกนเพื่อสะสมแต้ม</p>
+            <div style="background: #FFFFFF; padding: 18px; border-radius: 16px; border: 2px solid var(--primary-blue); display: inline-block; margin-bottom: 12px;">
+                <div id="member-qrcode-large"></div>
+            </div>
+            <h4 id="qr-modal-name" style="color: var(--primary-blue); font-size: 18px;">-</h4>
+            <p id="qr-modal-phone" style="font-size: 20px; font-weight: 700; color: var(--text-dark); letter-spacing: 1px; margin: 4px 0 16px;">-</p>
+            <button type="button" class="btn btn-primary btn-block" onclick="closeModal('qr-modal')">ปิดหน้าต่าง</button>
+        </div>
+    </div>
+
+    <!-- Modal บัตรคูปองรับของรางวัล (Redemption Ticket) -->
+    <div id="ticket-modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 380px; text-align: center; border-top: 6px solid var(--accent-yellow);">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-ticket"></i> คูปองรับของรางวัล</h3>
+                <button class="close-btn" onclick="closeModal('ticket-modal')">&times;</button>
+            </div>
+            <div style="background: #F8FAFC; border: 2px dashed var(--primary-blue); border-radius: 14px; padding: 18px; margin-bottom: 14px;">
+                <span style="font-size: 12px; color: var(--text-muted);">รหัสอ้างอิงคูปอง</span>
+                <div id="ticket-code" style="font-size: 28px; font-weight: 700; color: var(--primary-blue); letter-spacing: 2px; margin: 2px 0 10px;">#0000</div>
+                <div style="background: #FFFFFF; padding: 10px; border-radius: 10px; display: inline-block; margin-bottom: 10px;">
+                    <div id="ticket-qrcode"></div>
+                </div>
+                <h4 id="ticket-reward-name" style="font-size: 17px; color: var(--text-dark); margin-bottom: 4px;">ชื่อของรางวัล</h4>
+                <p id="ticket-member-info" style="font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">สมาชิก: -</p>
+                <p id="ticket-date" style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">วัน-เวลา: -</p>
+                <div id="ticket-status-badge"></div>
+            </div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">กรุณาแสดงหน้าจอคูปองนี้ที่เคาน์เตอร์ร้านมักอาชีวะเพื่อรับของรางวัล</p>
+            <button type="button" class="btn btn-primary btn-block" onclick="closeModal('ticket-modal')">ตกลง / ปิดหน้าต่าง</button>
+        </div>
     </div>
 
     <!-- Modal แก้ไขโปรไฟล์และเปลี่ยนรหัสผ่าน (สำหรับสมาชิก) -->

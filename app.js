@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + QR Code + POS + จำการล็อกอิน)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + QR Code + POS + คูปอง + จำการล็อกอิน)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -8,6 +8,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const SESSION_KEY = 'muk_rcheewa_user_id';
+const RESET_KEY_PREFIX = 'reset_req_';
 
 let db = {
     settings: {
@@ -18,10 +19,12 @@ let db = {
     rewards: [],
     point_history: [],
     redemptions: [],
-    promotions: []
+    promotions: [],
+    reset_requests: []
 };
 
 let currentUser = null;
+let rewardFilterMode = 'all';
 
 // โหลดข้อมูลล่าสุดทั้งหมดจาก Supabase
 async function syncFromCloud() {
@@ -42,10 +45,20 @@ async function syncFromCloud() {
         db.point_history = historyRes.data || [];
         db.redemptions = redeemRes.data || [];
         db.promotions = promoRes.data || [];
+        db.reset_requests = [];
 
         if (settingsRes.data) {
             settingsRes.data.forEach(s => {
-                db.settings[s.setting_key] = parseInt(s.setting_value);
+                if (s.setting_key.startsWith(RESET_KEY_PREFIX)) {
+                    const phone = s.setting_key.replace(RESET_KEY_PREFIX, '');
+                    db.reset_requests.push({
+                        key: s.setting_key,
+                        phone: phone,
+                        requested_at: s.setting_value
+                    });
+                } else {
+                    db.settings[s.setting_key] = parseInt(s.setting_value);
+                }
             });
         }
         return true;
@@ -94,8 +107,12 @@ function formatDateTime(isoString) {
     return `${y}-${m}-${d} ${h}:${min}`;
 }
 
+function formatTicketCode(id) {
+    return `#${String(id).padStart(4, '0')}`;
+}
+
 // ==========================================================
-// ระบบยืนยันตัวตน (Authentication & Auto-Login)
+// ระบบยืนยันตัวตน (Authentication, Auto-Login & Forgot Password)
 // ==========================================================
 function switchAuthTab(tab) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -108,6 +125,51 @@ function switchAuthTab(tab) {
         document.querySelectorAll('.tab-btn')[1].classList.add('active');
         document.getElementById('register-form').classList.add('active');
     }
+}
+
+function openForgotModal() {
+    const loginVal = document.getElementById('login-username').value.replace(/\D/g, '');
+    document.getElementById('forgot-phone').value = loginVal;
+    document.getElementById('forgot-modal').classList.remove('hidden');
+}
+
+async function handleForgotPassword(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-forgot-submit');
+    const phone = document.getElementById('forgot-phone').value.replace(/\D/g, '');
+
+    if (phone.length < 9 || phone.length > 10) {
+        showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'กำลังตรวจสอบ...';
+
+    await syncFromCloud();
+
+    const member = db.users.find(u =>
+        u.role === 'member' &&
+        u.student_id &&
+        u.student_id.replace(/\D/g, '') === phone
+    );
+
+    if (!member) {
+        showToast('ไม่พบเบอร์โทรศัพท์นี้ในระบบสมาชิก');
+        btn.disabled = false;
+        btn.textContent = 'ส่งคำขอรีเซ็ต';
+        return;
+    }
+
+    await sb.from('settings').upsert({
+        setting_key: `${RESET_KEY_PREFIX}${phone}`,
+        setting_value: new Date().toISOString()
+    });
+
+    btn.disabled = false;
+    btn.textContent = 'ส่งคำขอรีเซ็ต';
+    closeModal('forgot-modal');
+    showToast(`ส่งคำขอรีเซ็ตรหัสผ่านของคุณ ${member.full_name} ไปยังหน้าเคาน์เตอร์แล้ว กรุณาแจ้งพนักงานร้าน`);
 }
 
 function applyLoggedInUI(user) {
@@ -163,11 +225,9 @@ async function handleLogin(e) {
 
     const user = db.users.find(u => {
         if (u.password !== password) return false;
-        // กรณีเป็นบัญชีแอดมิน ให้ใช้ username ล็อกอินได้ตามปกติ
         if (u.role === 'admin') {
             return u.username.toLowerCase() === rawInput.toLowerCase();
         }
-        // กรณีเป็นสมาชิก ให้ตรวจสอบจากเบอร์โทรศัพท์ (student_id)
         const dbPhone = (u.student_id || '').replace(/\D/g, '');
         return cleanPhone !== '' && dbPhone === cleanPhone;
     });
@@ -184,9 +244,7 @@ async function handleLogin(e) {
 async function handleRegister(e) {
     e.preventDefault();
     const btn = document.getElementById('btn-reg-submit');
-    // ยุบช่องว่างที่เคาะเกินให้เหลือ 1 ช่อง และตัดช่องว่างหัว-ท้าย
     const fullName = document.getElementById('reg-fullname').value.trim().replace(/\s+/g, ' ');
-    // ลบขีดหรือเว้นวรรคในเบอร์โทรให้เหลือเฉพาะตัวเลข
     const phone = document.getElementById('reg-studentid').value.replace(/\D/g, '');
     const username = fullName;
     const password = document.getElementById('reg-password').value.trim();
@@ -201,7 +259,6 @@ async function handleRegister(e) {
 
     await syncFromCloud();
 
-    // 1. ตรวจสอบชื่อ-นามสกุล / Username ซ้ำ
     const isNameDuplicate = db.users.some(u =>
         (u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase()) ||
         (u.full_name && u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase())
@@ -214,7 +271,6 @@ async function handleRegister(e) {
         return;
     }
 
-    // 2. ตรวจสอบเบอร์โทรศัพท์ซ้ำ
     const isPhoneDuplicate = db.users.some(u =>
         u.student_id && u.student_id.replace(/\D/g, '') === phone
     );
@@ -273,6 +329,56 @@ function handleLogout() {
 // ==========================================================
 // 1. ระบบสมาชิก (Member Functions)
 // ==========================================================
+function openMemberQRModal() {
+    if (!currentUser) return;
+    const codeText = currentUser.student_id || currentUser.username;
+    const container = document.getElementById('member-qrcode-large');
+    container.innerHTML = '';
+    new QRCode(container, {
+        text: String(codeText),
+        width: 210,
+        height: 210,
+        colorDark: "#1E3A8A",
+        colorLight: "#FFFFFF",
+        correctLevel: QRCode.CorrectLevel.M
+    });
+    document.getElementById('qr-modal-name').textContent = currentUser.full_name;
+    document.getElementById('qr-modal-phone').textContent = currentUser.student_id || '-';
+    document.getElementById('qr-modal').classList.remove('hidden');
+}
+
+function openTicketModal(redemptionId) {
+    const item = db.redemptions.find(r => r.id === redemptionId);
+    if (!item) return;
+
+    const reward = db.rewards.find(rw => rw.id === item.reward_id);
+    const code = formatTicketCode(item.id);
+
+    document.getElementById('ticket-code').textContent = code;
+    document.getElementById('ticket-reward-name').textContent = reward ? reward.name : 'ของรางวัล';
+    document.getElementById('ticket-member-info').textContent = `สมาชิก: ${currentUser.full_name} (${currentUser.student_id || '-'})`;
+    document.getElementById('ticket-date').textContent = `วันที่ขอแลก: ${formatDateTime(item.created_at)}`;
+
+    const qrBox = document.getElementById('ticket-qrcode');
+    qrBox.innerHTML = '';
+    new QRCode(qrBox, {
+        text: `REDEEM-${item.id}-${currentUser.student_id || currentUser.id}`,
+        width: 130,
+        height: 130,
+        colorDark: "#1E3A8A",
+        colorLight: "#FFFFFF",
+        correctLevel: QRCode.CorrectLevel.M
+    });
+
+    const statusMap = {
+        pending: '<span class="status-pill status-pending">รออนุมัติ / รอรับของที่เคาน์เตอร์</span>',
+        approved: '<span class="status-pill status-approved">รับของรางวัลเรียบร้อยแล้ว</span>',
+        rejected: '<span class="status-pill status-rejected">ยกเลิกรายการแล้ว (คืนแต้มแล้ว)</span>'
+    };
+    document.getElementById('ticket-status-badge').innerHTML = statusMap[item.status] || '';
+    document.getElementById('ticket-modal').classList.remove('hidden');
+}
+
 function openProfileModal() {
     if (!currentUser) return;
     document.getElementById('prof-fullname').value = currentUser.full_name || '';
@@ -306,7 +412,6 @@ async function saveMemberProfile(e) {
 
     let updatedPassword = currentUser.password;
 
-    // ตรวจสอบกรณีผู้ใช้ต้องการเปลี่ยนรหัสผ่าน
     if (oldPass || newPass || confirmPass) {
         if (!oldPass) {
             showToast('กรุณากรอกรหัสผ่านเดิมเพื่อยืนยัน');
@@ -332,7 +437,6 @@ async function saveMemberProfile(e) {
 
     await syncFromCloud();
 
-    // ตรวจสอบชื่อซ้ำกับสมาชิกคนอื่น
     const isNameDuplicate = db.users.some(u =>
         u.id !== currentUser.id &&
         ((u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()) ||
@@ -346,7 +450,6 @@ async function saveMemberProfile(e) {
         return;
     }
 
-    // ตรวจสอบเบอร์โทรศัพท์ซ้ำกับสมาชิกคนอื่น
     const isPhoneDuplicate = db.users.some(u =>
         u.id !== currentUser.id &&
         (u.student_id && u.student_id.replace(/\D/g, '') === phone)
@@ -411,6 +514,35 @@ function generateMemberQR(codeText) {
     });
 }
 
+function renderMemberPointsGoal() {
+    const goalText = document.getElementById('mem-goal-text');
+    const goalPercent = document.getElementById('mem-goal-percent');
+    const goalBar = document.getElementById('mem-goal-bar');
+    if (!goalText || !goalPercent || !goalBar) return;
+
+    const availableRewards = db.rewards.filter(r => r.stock > 0).sort((a, b) => a.points_required - b.points_required);
+    if (!availableRewards.length) {
+        goalText.textContent = 'สะสมแต้มต่อเนื่องเพื่อแลกของรางวัลพิเศษ';
+        goalPercent.textContent = '100%';
+        goalBar.style.width = '100%';
+        return;
+    }
+
+    const nextTarget = availableRewards.find(r => r.points_required > currentUser.points);
+    if (nextTarget) {
+        const diff = nextTarget.points_required - currentUser.points;
+        const pct = Math.min(100, Math.round((currentUser.points / nextTarget.points_required) * 100));
+        goalText.textContent = `อีก ${diff} แต้ม แลก "${nextTarget.name}"`;
+        goalPercent.textContent = `${pct}%`;
+        goalBar.style.width = `${pct}%`;
+    } else {
+        const maxReward = availableRewards[availableRewards.length - 1];
+        goalText.textContent = `แต้มของคุณแลกได้ทุกรายการ (สูงสุด: ${maxReward.name})`;
+        goalPercent.textContent = '100%';
+        goalBar.style.width = '100%';
+    }
+}
+
 function renderMemberDashboard() {
     const latestUser = db.users.find(u => u.id === currentUser.id);
     if (latestUser) currentUser = latestUser;
@@ -421,6 +553,7 @@ function renderMemberDashboard() {
     document.getElementById('mem-rate-info').textContent = `ทุกยอดซื้อ ${db.settings.baht_per_point} บาท รับ 1 แต้ม`;
 
     generateMemberQR(currentUser.student_id || currentUser.username);
+    renderMemberPointsGoal();
     renderMemberPromotions();
     renderMemberRewards();
     renderMemberHistory();
@@ -507,11 +640,31 @@ function updatePromoSlideUI() {
     });
 }
 
+function setRewardFilter(mode) {
+    rewardFilterMode = mode;
+    const btnAll = document.getElementById('filter-rew-all');
+    const btnCan = document.getElementById('filter-rew-can');
+    if (btnAll && btnCan) {
+        btnAll.className = mode === 'all' ? 'btn btn-primary' : 'btn btn-outline';
+        btnCan.className = mode === 'can_redeem' ? 'btn btn-primary' : 'btn btn-outline';
+    }
+    renderMemberRewards();
+}
+
 function renderMemberRewards() {
     const grid = document.getElementById('member-rewards-grid');
     grid.innerHTML = '';
 
-    db.rewards.forEach(reward => {
+    const filteredRewards = rewardFilterMode === 'can_redeem'
+        ? db.rewards.filter(r => currentUser.points >= r.points_required && r.stock > 0)
+        : db.rewards;
+
+    if (!filteredRewards.length) {
+        grid.innerHTML = `<div class="card-box" style="grid-column: 1 / -1; text-align: center; color: var(--text-muted);">ยังไม่มีรายการของรางวัลที่แลกได้ในขณะนี้ ลองสะสมแต้มเพิ่มอีกนิดนะครับ!</div>`;
+        return;
+    }
+
+    filteredRewards.forEach(reward => {
         const canRedeem = currentUser.points >= reward.points_required && reward.stock > 0;
         let btnText = 'แลกของรางวัล';
         if (reward.stock <= 0) btnText = 'ของรางวัลหมด';
@@ -565,7 +718,7 @@ async function redeemReward(rewardId) {
     const newPoints = latestUser.points - reward.points_required;
     const newStock = reward.stock - 1;
 
-    await Promise.all([
+    const [, , insertRes] = await Promise.all([
         sb.from('users').update({ points: newPoints }).eq('id', latestUser.id),
         sb.from('rewards').update({ stock: newStock }).eq('id', reward.id),
         sb.from('redemptions').insert([{
@@ -573,12 +726,47 @@ async function redeemReward(rewardId) {
             reward_id: reward.id,
             points_spent: reward.points_required,
             status: 'pending'
-        }])
+        }]).select().single()
     ]);
 
     await syncFromCloud();
     renderMemberDashboard();
-    showToast(`ส่งคำขอแลก "${reward.name}" สำเร็จ! กรุณาแสดงหน้าจอนี้ที่เคาน์เตอร์ร้าน`);
+    showToast(`แลก "${reward.name}" สำเร็จ! แสดงคูปองนี้ที่เคาน์เตอร์ร้าน`);
+
+    if (insertRes && insertRes.data) {
+        openTicketModal(insertRes.data.id);
+    }
+}
+
+async function cancelMyRedemption(redemptionId) {
+    await syncFromCloud();
+    const item = db.redemptions.find(r => r.id === redemptionId && r.user_id === currentUser.id);
+    if (!item) return;
+
+    if (item.status !== 'pending') {
+        showToast('ไม่สามารถยกเลิกได้ เนื่องจากรายการนี้ถูกดำเนินการไปแล้ว');
+        renderMemberDashboard();
+        return;
+    }
+
+    const reward = db.rewards.find(r => r.id === item.reward_id);
+    if (!confirm(`ยืนยันการยกเลิกคำขอแลก "${reward ? reward.name : 'ของรางวัล'}" และรับคืน ${item.points_spent} แต้มหรือไม่?`)) {
+        return;
+    }
+
+    const latestUser = db.users.find(u => u.id === currentUser.id);
+
+    await sb.from('redemptions').update({ status: 'rejected' }).eq('id', redemptionId);
+    if (latestUser) {
+        await sb.from('users').update({ points: latestUser.points + item.points_spent }).eq('id', latestUser.id);
+    }
+    if (reward) {
+        await sb.from('rewards').update({ stock: reward.stock + 1 }).eq('id', reward.id);
+    }
+
+    await syncFromCloud();
+    renderMemberDashboard();
+    showToast(`ยกเลิกรายการและคืน ${item.points_spent} แต้มให้เรียบร้อยแล้ว`);
 }
 
 function renderMemberHistory() {
@@ -604,15 +792,27 @@ function renderMemberHistory() {
             approved: '<span class="status-pill status-approved">แลกสำเร็จแล้ว</span>',
             rejected: '<span class="status-pill status-rejected">ยกเลิก (คืนแต้มแล้ว)</span>'
         };
+
+        const cancelBtn = item.status === 'pending'
+            ? `<button class="btn btn-danger" onclick="cancelMyRedemption(${item.id})" title="ยกเลิกคำขอและรับแต้มคืน"><i class="fa-solid fa-rotate-left"></i> ยกเลิก</button>`
+            : '';
+
         return `
             <tr>
+                <td><strong>${formatTicketCode(item.id)}</strong></td>
                 <td>${formatDateTime(item.created_at)}</td>
                 <td>${reward ? reward.name : 'ของรางวัลที่ถูกลบ'}</td>
                 <td>-${item.points_spent} แต้ม</td>
                 <td>${statusMap[item.status]}</td>
+                <td style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <button class="btn btn-outline-sm" onclick="openTicketModal(${item.id})">
+                        <i class="fa-solid fa-ticket"></i> คูปอง
+                    </button>
+                    ${cancelBtn}
+                </td>
             </tr>
         `;
-    }).join('') : '<tr><td colspan="4" style="text-align:center;">ยังไม่มีประวัติการแลกของรางวัล</td></tr>';
+    }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการแลกของรางวัล</td></tr>';
 }
 
 // ==========================================================
@@ -625,6 +825,61 @@ async function switchAdminTab(tabName, btnElement) {
     btnElement.classList.add('active');
     document.getElementById(`admin-tab-${tabName}`).classList.add('active');
 
+    await syncFromCloud();
+    renderAdminDashboard();
+}
+
+function renderAdminResetAlerts() {
+    const alertBox = document.getElementById('admin-reset-alerts');
+    if (!alertBox) return;
+
+    if (!db.reset_requests || !db.reset_requests.length) {
+        alertBox.classList.add('hidden');
+        alertBox.innerHTML = '';
+        return;
+    }
+
+    alertBox.classList.remove('hidden');
+    alertBox.innerHTML = `
+        <h3 style="color: var(--danger-red); margin-bottom: 10px;">
+            <i class="fa-solid fa-triangle-exclamation"></i> มีคำขอรีเซ็ตรหัสผ่านจากสมาชิก (${db.reset_requests.length} รายการ)
+        </h3>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${db.reset_requests.map(req => {
+                const user = db.users.find(u => u.student_id && u.student_id.replace(/\D/g, '') === req.phone);
+                const nameDisplay = user ? `${user.full_name} (${req.phone})` : req.phone;
+                return `
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: #FFFFFF; padding: 10px 14px; border-radius: 10px; border: 1px solid #FECACA; flex-wrap: wrap; gap: 8px;">
+                        <div>
+                            <strong>${nameDisplay}</strong>
+                            <small style="color: var(--text-muted); display: block;">แจ้งเมื่อ: ${formatDateTime(req.requested_at)}</small>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="approvePasswordReset('${req.phone}')">
+                                <i class="fa-solid fa-key"></i> รีเซ็ตเป็น 1234
+                            </button>
+                            <button class="btn btn-outline-sm" onclick="dismissPasswordReset('${req.phone}')">ปิดแจ้งเตือน</button>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+async function approvePasswordReset(phone) {
+    const user = db.users.find(u => u.student_id && u.student_id.replace(/\D/g, '') === phone);
+    if (user) {
+        await sb.from('users').update({ password: '1234' }).eq('id', user.id);
+    }
+    await sb.from('settings').delete().eq('setting_key', `${RESET_KEY_PREFIX}${phone}`);
+    await syncFromCloud();
+    renderAdminDashboard();
+    showToast(`รีเซ็ตรหัสผ่านของ ${user ? user.full_name : phone} เป็น "1234" เรียบร้อยแล้ว`);
+}
+
+async function dismissPasswordReset(phone) {
+    await sb.from('settings').delete().eq('setting_key', `${RESET_KEY_PREFIX}${phone}`);
     await syncFromCloud();
     renderAdminDashboard();
 }
@@ -643,6 +898,7 @@ function renderAdminDashboard() {
 
     document.getElementById('setting-baht-per-point').value = db.settings.baht_per_point;
 
+    renderAdminResetAlerts();
     renderPOSMemberSelect();
     renderRecentPOS();
     renderAdminRedemptions();
@@ -786,6 +1042,7 @@ function renderAdminRedemptions() {
 
         return `
             <tr>
+                <td><strong>${formatTicketCode(item.id)}</strong></td>
                 <td>${formatDateTime(item.created_at)}</td>
                 <td>${user ? `${user.full_name} (${user.student_id || '-'})` : 'ไม่พบสมาชิก'}</td>
                 <td>${reward ? reward.name : 'ไม่พบของรางวัล'}</td>
@@ -794,7 +1051,7 @@ function renderAdminRedemptions() {
                 <td>${actionBtns}</td>
             </tr>
         `;
-    }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีรายการขอแลกของรางวัล</td></tr>';
+    }).join('') : '<tr><td colspan="7" style="text-align:center;">ยังไม่มีรายการขอแลกของรางวัล</td></tr>';
 }
 
 async function updateRedemptionStatus(redemptionId, newStatus) {
@@ -1052,7 +1309,6 @@ async function saveMember(e) {
     await syncFromCloud();
     const currentId = id ? parseInt(id) : null;
 
-    // 1. ตรวจสอบชื่อ-นามสกุล / Username ซ้ำ (ยกเว้นข้อมูลของตัวเองตอนแก้ไข)
     const isNameDuplicate = db.users.some(u =>
         u.id !== currentId &&
         ((u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === username.toLowerCase()) ||
@@ -1064,7 +1320,6 @@ async function saveMember(e) {
         return;
     }
 
-    // 2. ตรวจสอบเบอร์โทรศัพท์ซ้ำ (ยกเว้นข้อมูลของตัวเองตอนแก้ไข)
     const isPhoneDuplicate = db.users.some(u =>
         u.id !== currentId &&
         (u.student_id && u.student_id.replace(/\D/g, '') === phone)
