@@ -3,66 +3,60 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-Content-Type-Options" content="nosniff">
-    <title>MUG R-CHEWA - ระบบสะสมแต้มสมาชิก ร้านมักอาชีวะ</title>
+    <title>ระบบบริหารจัดการแต้มสมาชิกดิจิทัล - ร้านมักอาชีวะ</title>
+    <!-- Google Fonts: Prompt -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- JsBarcode Library สำหรับสร้างบาร์โค้ดรหัสสมาชิก -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Custom CSS -->
     <link rel="stylesheet" href="style.css">
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#1E3A8A">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="ICON.jpg">
-    <link rel="icon" type="image/jpeg" href="ICON.jpg">
-    <link rel="shortcut icon" type="image/jpeg" href="ICON.jpg">
 </head>
 <body>
 
-    <noscript>
-        <div style="background:#DC2626;color:#FFFFFF;padding:16px;text-align:center;font-weight:600;">
-            กรุณาเปิดใช้งาน JavaScript ในเบราว์เซอร์เพื่อใช้งานระบบสะสมแต้มสมาชิก ร้านมักอาชีวะ
-        </div>
-    </noscript>
-
-    <!-- ส่วนแสดงการแจ้งเตือน (Toast Notification) -->
-    <div id="toast-container" class="toast-container" aria-live="polite"></div>
+    <!-- ระบบแจ้งเตือน (Toast Notification) -->
+    <div id="toast-container" class="toast-container"></div>
 
     <!-- ==========================================
-         หน้าเข้าสู่ระบบและสมัครสมาชิก (Auth View)
+         ส่วนที่ 1: หน้าจอเข้าสู่ระบบ & สมัครสมาชิก
          ========================================== -->
-    <section id="auth-view" class="auth-wrapper">
+    <section id="auth-view" class="auth-container">
         <div class="auth-card">
-            <div class="auth-header">
+            <div class="brand-header">
                 <div class="brand-logo">
-                    <img src="ICON.jpg" alt="โลโก้ร้านมักอาชีวะ" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+                    <i class="fa-solid fa-store"></i>
                 </div>
                 <h1>ร้านมักอาชีวะ</h1>
-                <p>ระบบสะสมแต้มสมาชิกดิจิทัล<br>วิทยาลัยอาชีวศึกษามหาสารคาม</p>
+                <p>ระบบสะสมแต้มสมาชิกดิจิทัล (Digital Loyalty System)</p>
             </div>
 
-            <div class="auth-tabs" role="tablist">
+            <div class="auth-tabs">
                 <button type="button" class="tab-btn active" onclick="switchAuthTab('login')">เข้าสู่ระบบ</button>
-                <button type="button" class="tab-btn" onclick="switchAuthTab('register')">สมัครสมาชิก</button>
+                <button type="button" class="tab-btn" onclick="switchAuthTab('register')">สมัครสมาชิกใหม่</button>
             </div>
 
             <!-- ฟอร์มเข้าสู่ระบบ -->
             <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
                 <div class="form-group">
-                    <label for="login-username">เบอร์โทรศัพท์</label>
-                    <input type="text" id="login-username" required placeholder="กรอกเบอร์โทรศัพท์ที่ใช้สมัคร" autocomplete="username">
+                    <label for="login-username"><i class="fa-solid fa-phone"></i> เบอร์โทรศัพท์</label>
+                    <input type="text" id="login-username" placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก (เช่น 0812345678)" required>
                 </div>
-                <div class="form-group" style="margin-bottom: 10px;">
-                    <label for="login-password">รหัสผ่าน (Password)</label>
-                    <input type="password" id="login-password" required placeholder="กรอกรหัสผ่าน" autocomplete="current-password">
+                <div class="form-group">
+                    <label for="login-password"><i class="fa-solid fa-lock"></i> รหัสผ่าน</label>
+                    <input type="password" id="login-password" placeholder="กรอกรหัสผ่าน" required>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-size: 13px; gap: 8px; flex-wrap: wrap;">
-                    <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; margin: 0; font-weight: 400; color: var(--text-dark);">
-                        <input type="checkbox" id="login-remember" checked style="width: 16px; height: 16px; accent-color: var(--primary-blue); cursor: pointer;">
-                        <span>จดจำฉันไว้ในระบบ</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-size: 13.5px;">
+                    <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted); margin-bottom: 0;">
+                        <input type="checkbox" id="login-remember" checked style="width: auto; accent-color: var(--primary-blue);">
+                        จำการเข้าสู่ระบบไว้
                     </label>
-                    <a href="javascript:void(0)" onclick="openForgotModal()" style="color: var(--primary-blue); text-decoration: none; font-weight: 500;">
-                        <i class="fa-solid fa-key"></i> ลืมรหัสผ่าน?
+                    <a href="javascript:void(0)" onclick="openForgotModal()" style="color: var(--primary-blue); font-weight: 500; text-decoration: none;">
+                        ลืมรหัสผ่าน?
                     </a>
                 </div>
                 <button type="submit" id="btn-login-submit" class="btn btn-primary btn-block">
@@ -73,18 +67,18 @@
             <!-- ฟอร์มสมัครสมาชิก -->
             <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
                 <div class="form-group">
-                    <label for="reg-fullname">ชื่อ-นามสกุล (ใช้เป็นชื่อเข้าสู่ระบบ)</label>
-                    <input type="text" id="reg-fullname" required placeholder="เช่น นายสมชาย ใจดี" autocomplete="name">
+                    <label for="reg-fullname"><i class="fa-solid fa-id-card"></i> ชื่อ - นามสกุล (ห้ามซ้ำ)</label>
+                    <input type="text" id="reg-fullname" placeholder="เช่น นายสมชาย ใจดี" required>
                 </div>
                 <div class="form-group">
-                    <label for="reg-studentid">เบอร์โทรศัพท์</label>
-                    <input type="tel" id="reg-studentid" required placeholder="เช่น 0812345678" maxlength="10" autocomplete="tel">
+                    <label for="reg-studentid"><i class="fa-solid fa-phone"></i> เบอร์โทรศัพท์ (ใช้เป็นรหัสเข้าสู่ระบบ)</label>
+                    <input type="tel" id="reg-studentid" maxlength="10" pattern="[0-9]{9,10}" inputmode="numeric" placeholder="กรอกเบอร์โทรศัพท์ 10 หลัก (เช่น 0812345678)" required>
                 </div>
                 <div class="form-group">
-                    <label for="reg-password">รหัสผ่าน (Password)</label>
-                    <input type="password" id="reg-password" required placeholder="ตั้งรหัสผ่าน" autocomplete="new-password">
+                    <label for="reg-password"><i class="fa-solid fa-lock"></i> กำหนดรหัสผ่าน</label>
+                    <input type="password" id="reg-password" placeholder="ตั้งรหัสผ่านสำหรับใช้งาน" required>
                 </div>
-                <button type="submit" id="btn-reg-submit" class="btn btn-primary btn-block">
+                <button type="submit" id="btn-reg-submit" class="btn btn-secondary btn-block">
                     <i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรีแต้มโบนัส!)
                 </button>
             </form>
@@ -92,135 +86,84 @@
     </section>
 
     <!-- ==========================================
-         ส่วนหลักของระบบ (Main App Layout)
+         ส่วนที่ 2: พื้นที่ใช้งานหลักหลังเข้าสู่ระบบ
          ========================================== -->
-    <div id="main-app" class="app-layout hidden">
+    <div id="main-app" class="app-wrapper hidden">
         <!-- แถบนำทางด้านบน (Navbar) -->
         <header class="navbar">
             <div class="nav-brand">
-                <img src="ICON.jpg" alt="โลโก้ร้านมักอาชีวะ" style="width: 40px; height: 40px; object-fit: cover; border-radius: 50%; flex-shrink: 0;">
-                <div>
-                    <span class="brand-title">ร้านมักอาชีวะ</span>
-                    <span class="brand-sub">วิทยาลัยอาชีวศึกษามหาสารคาม</span>
-                </div>
+                <i class="fa-solid fa-store"></i>
+                <span>ร้านมักอาชีวะ</span>
+                <span class="badge-role" id="nav-user-role">สมาชิก</span>
             </div>
             <div class="nav-user">
-                <button type="button" class="btn btn-logout" onclick="refreshCurrentView()" title="รีเฟรชข้อมูลล่าสุด">
+                <span id="nav-user-name">ชื่อผู้ใช้งาน</span>
+                <button type="button" class="btn btn-outline-sm" onclick="refreshCurrentView()" title="ซิงก์ข้อมูลล่าสุด">
                     <i class="fa-solid fa-rotate"></i>
                 </button>
-                <span id="nav-user-role" class="role-badge">สมาชิก</span>
-                <span id="nav-user-name" class="user-name">ชื่อผู้ใช้</span>
-                <button type="button" class="btn btn-logout" onclick="handleLogout()">
-                    <i class="fa-solid fa-power-off"></i> ออกจากระบบ
+                <button type="button" class="btn btn-outline-sm" onclick="handleLogout()">
+                    <i class="fa-solid fa-right-from-bracket"></i> ออกจากระบบ
                 </button>
             </div>
         </header>
 
         <!-- ==========================================
-             1. ระบบสมาชิก (Member Dashboard)
+             มุมมองที่ 2.1: ระบบสำหรับสมาชิก (Member View)
              ========================================== -->
         <main id="member-dashboard" class="container hidden">
-            <!-- แบนเนอร์โปรโมชั่น -->
-            <div id="member-promo-section" class="promo-carousel-wrapper"></div>
-
-            <!-- บัตรสมาชิกดิจิทัล (แสดงระดับสมาชิก + บาร์โค้ดสำหรับเครื่องยิง) -->
-            <div class="member-hero-grid">
-                <div class="digital-card" id="member-digital-card">
-                    <div class="card-top" style="flex-direction: column; gap: 12px;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%; gap: 8px; flex-wrap: wrap;">
-                            <div>
-                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                                    <span class="card-tag">MUK RCHEEWA MEMBER</span>
-                                    <span id="mem-tier-badge" class="tier-badge tier-member">
-                                        <i class="fa-solid fa-medal"></i> MEMBER
-                                    </span>
-                                </div>
-                                <h2 id="mem-card-name">ชื่อสมาชิก</h2>
-                                <p id="mem-card-id">เบอร์โทรศัพท์: -</p>
-                            </div>
-                            <button type="button" onclick="openProfileModal()" style="background: #FACC15; color: #1E3A8A; font-weight: 600; border: none; border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);">
-                                <i class="fa-solid fa-user-pen"></i> แก้ไขโปรไฟล์ / รหัสผ่าน
-                            </button>
-                        </div>
-
-                        <!-- กล่องบาร์โค้ดสมาชิก (แตะเพื่อขยายใหญ่ให้เครื่องยิงบาร์โค้ด) -->
-                        <div class="barcode-card-box" onclick="openMemberBarcodeModal()" title="แตะเพื่อขยายบาร์โค้ดสำหรับสแกน">
-                            <svg id="member-barcode"></svg>
-                            <span class="barcode-tap-hint"><i class="fa-solid fa-expand"></i> แตะขยายบาร์โค้ดให้พนักงานยิง</span>
-                        </div>
+            <!-- บัตรสมาชิกดิจิทัล & ยอดแต้มคงเหลือ -->
+            <div class="member-hero-card">
+                <div class="hero-info">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px;">
+                        <p class="hero-greeting" style="margin-bottom: 0;">บัตรสมาชิกดิจิทัล</p>
+                        <span id="mem-tier-badge" class="tier-badge tier-member"><i class="fa-solid fa-medal"></i> ระดับ MEMBER</span>
+                        <button type="button" class="btn-edit-profile" onclick="openProfileModal()">
+                            <i class="fa-solid fa-user-pen"></i> แก้ไขโปรไฟล์
+                        </button>
                     </div>
-                    <div class="card-bottom" style="margin-top: 14px; flex-direction: column; gap: 4px;">
-                        <div style="display: flex; justify-content: space-between; width: 100%; gap: 8px; flex-wrap: wrap;">
-                            <span>ร้านมักอาชีวะ วิทยาลัยอาชีวศึกษามหาสารคาม</span>
-                            <span id="mem-tier-next-text" style="font-weight: 600;">สะสมรวม 0 แต้ม</span>
+                    <h2 id="mem-card-name">ชื่อสมาชิก</h2>
+                    <p id="mem-card-id" class="hero-sub">เบอร์โทรศัพท์: -</p>
+                    <small id="mem-tier-next-text" style="display: block; color: #FDE68A; font-size: 12.5px; margin-top: 2px;"></small>
+
+                    <!-- กล่องแสดงบาร์โค้ดรหัสสมาชิกสำหรับยิงสแกนหน้าร้าน -->
+                    <div class="barcode-card-box" onclick="openMemberBarcodeModal()" title="คลิกเพื่อขยายบาร์โค้ดให้พนักงานสแกน">
+                        <svg id="member-barcode"></svg>
+                        <span><i class="fa-solid fa-expand"></i> แตะเพื่อขยายบาร์โค้ดสแกนสะสมแต้ม</span>
+                    </div>
+
+                    <!-- แถบเป้าหมายแต้มถัดไป (Progress Bar) -->
+                    <div class="tier-progress-wrap">
+                        <div class="tier-progress-label">
+                            <span id="mem-goal-text">กำลังคำนวณเป้าหมาย...</span>
+                            <span id="mem-goal-percent">0%</span>
+                        </div>
+                        <div class="tier-progress-track">
+                            <div id="mem-goal-bar" class="tier-progress-fill" style="width: 0%;"></div>
                         </div>
                     </div>
                 </div>
-
-                <!-- กล่องแสดงแต้มสะสมสีเหลืองเด่นชัด + หลอดแบ่งระดับ Rank + กิจกรรมรายวัน -->
-                <div class="points-highlight-card" style="flex-direction: column; align-items: stretch; justify-content: center; gap: 14px;">
-                    <div style="display: flex; align-items: center; gap: 18px;">
-                        <div class="points-icon">
-                            <i class="fa-solid fa-coins"></i>
-                        </div>
-                        <div class="points-info">
-                            <span>แต้มสะสมปัจจุบันของคุณ</span>
-                            <div class="points-number"><span id="mem-current-points">0</span> <small>แต้ม</small></div>
-                            <p id="mem-rate-info">ทุกยอดซื้อ 20 บาท รับ 1 แต้ม</p>
-                        </div>
-                    </div>
-
-                    <!-- หลอดแบ่งระดับ Rank (MEMBER -> SILVER -> GOLD -> PLATINUM) -->
-                    <div id="mem-goal-box" class="rank-progress-box">
-                        <div class="rank-progress-header">
-                            <span id="mem-rank-current-label" class="rank-current-pill">
-                                <i class="fa-solid fa-medal"></i> MEMBER
-                            </span>
-                            <span id="mem-goal-text" class="rank-goal-desc">กำลังคำนวณระดับ Rank...</span>
-                            <span id="mem-goal-percent" class="rank-percent-text">0%</span>
-                        </div>
-
-                        <div class="rank-bar-wrapper">
-                            <div class="rank-bar-track">
-                                <div id="mem-goal-bar" class="rank-bar-fill"></div>
-                            </div>
-                            <div class="rank-milestones">
-                                <div class="rank-step active" data-rank="MEMBER" style="left: 0%;">
-                                    <span class="rank-dot"></span>
-                                    <span class="rank-name">MEMBER<small>0</small></span>
-                                </div>
-                                <div class="rank-step" data-rank="SILVER" style="left: 33.33%;">
-                                    <span class="rank-dot"></span>
-                                    <span class="rank-name">SILVER<small>50</small></span>
-                                </div>
-                                <div class="rank-step" data-rank="GOLD" style="left: 66.66%;">
-                                    <span class="rank-dot"></span>
-                                    <span class="rank-name">GOLD<small>150</small></span>
-                                </div>
-                                <div class="rank-step" data-rank="PLATINUM" style="left: 100%;">
-                                    <span class="rank-dot"></span>
-                                    <span class="rank-name">PLATINUM<small>300</small></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- ปุ่มกิจกรรมรายวัน (เช็กอิน + ปฏิทินเช็กอิน + วงล้อลุ้นแต้ม) -->
-                    <div class="member-fun-actions">
+                <div class="hero-points">
+                    <span>แต้มสะสมคงเหลือ</span>
+                    <div class="points-number" id="mem-current-points">0</div>
+                    <small id="mem-rate-info">ทุกยอดซื้อ 20 บาท รับ 1 แต้ม</small>
+                    <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; justify-content: flex-end;">
                         <button type="button" id="btn-daily-checkin" class="btn-checkin" onclick="handleDailyCheckin()">
                             <i class="fa-solid fa-calendar-check"></i> เช็กอิน (+1 แต้ม)
                         </button>
-                        <button type="button" class="btn-calendar-view" onclick="openCheckinCalendarModal()">
-                            <i class="fa-solid fa-calendar-days"></i> ปฏิทินเช็กอิน
+                        <button type="button" class="btn-cal-view" onclick="openCheckinCalendarModal()" title="ดูปฏิทินการเช็กอิน">
+                            <i class="fa-solid fa-calendar-days"></i> ปฏิทิน
                         </button>
-                        <button type="button" id="btn-open-lucky-spin" class="btn-lucky-spin" onclick="openLuckySpinModal()" style="grid-column: 1 / -1;">
-                            <i class="fa-solid fa-dharmachakra fa-spin" style="--fa-animation-duration: 8s;"></i> วงล้อลุ้นแต้มมหาสนุก
+                        <button type="button" id="btn-open-lucky-spin" class="btn-spin-wheel" onclick="openLuckySpinModal()">
+                            <i class="fa-solid fa-dharmachakra"></i> วงล้อลุ้นแต้ม
                         </button>
                     </div>
                 </div>
             </div>
 
-            <!-- เมนูย่อยฝั่งสมาชิก -->
+            <!-- สไลด์แบนเนอร์โปรโมชั่น -->
+            <div id="member-promo-section" class="promo-slider-wrapper"></div>
+
+            <!-- เมนูย่อยของสมาชิก -->
             <div class="sub-nav">
                 <button type="button" class="sub-nav-btn active" onclick="switchMemberTab('rewards', this)">
                     <i class="fa-solid fa-gift"></i> แลกของรางวัล
@@ -229,20 +172,23 @@
                     <i class="fa-solid fa-clock-rotate-left"></i> ประวัติการสะสมแต้ม
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchMemberTab('redeem-history', this)">
-                    <i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัล
+                    <i class="fa-solid fa-ticket"></i> ประวัติการแลกของรางวัล
+                </button>
+                <button type="button" class="sub-nav-btn" onclick="switchMemberTab('spin-history', this)">
+                    <i class="fa-solid fa-dharmachakra"></i> ประวัติหมุนวงล้อ
                 </button>
             </div>
 
-            <!-- แท็บรายการของรางวัล -->
+            <!-- แท็บแลกของรางวัล -->
             <div id="mem-tab-rewards" class="tab-content active">
-                <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                     <div>
-                        <h3><i class="fa-solid fa-gift"></i> รายการของรางวัล</h3>
-                        <p>เลือกของรางวัลที่ต้องการและกดแลกแต้มได้ทันที</p>
+                        <h3>รายการของรางวัลสำหรับสมาชิก</h3>
+                        <p>ใช้แต้มสะสมของคุณแลกรับสิทธิพิเศษและของรางวัลได้ทันที</p>
                     </div>
                     <div style="display: flex; gap: 8px;">
-                        <button type="button" id="filter-rew-all" class="btn btn-primary" style="padding: 7px 14px; font-size: 13px;" onclick="setRewardFilter('all')">ทั้งหมด</button>
-                        <button type="button" id="filter-rew-can" class="btn btn-outline" style="padding: 7px 14px; font-size: 13px;" onclick="setRewardFilter('can_redeem')">แลกได้ตอนนี้</button>
+                        <button type="button" id="filter-rew-all" class="btn btn-primary" style="padding: 6px 14px; font-size: 13px;" onclick="setRewardFilter('all')">ทั้งหมด</button>
+                        <button type="button" id="filter-rew-can" class="btn btn-outline" style="padding: 6px 14px; font-size: 13px;" onclick="setRewardFilter('can_redeem')">แลกได้ตอนนี้</button>
                     </div>
                 </div>
                 <div id="member-rewards-grid" class="rewards-grid"></div>
@@ -251,7 +197,7 @@
             <!-- แท็บประวัติการสะสมแต้ม -->
             <div id="mem-tab-earn-history" class="tab-content">
                 <div class="card-box">
-                    <h3><i class="fa-solid fa-clock-rotate-left"></i> ประวัติการสะสมแต้ม</h3>
+                    <h3><i class="fa-solid fa-coins"></i> ประวัติการซื้อสินค้าและได้รับแต้ม</h3>
                     <div class="table-responsive">
                         <table class="data-table">
                             <thead>
@@ -259,7 +205,7 @@
                                     <th>วัน-เวลา</th>
                                     <th>รายการ / หมายเหตุ</th>
                                     <th>ยอดซื้อ (บาท)</th>
-                                    <th>แต้มที่ได้รับ</th>
+                                    <th>แต้มที่เปลี่ยนแปลง</th>
                                 </tr>
                             </thead>
                             <tbody id="mem-earn-tbody"></tbody>
@@ -271,14 +217,14 @@
             <!-- แท็บประวัติการแลกของรางวัล -->
             <div id="mem-tab-redeem-history" class="tab-content">
                 <div class="card-box">
-                    <h3><i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัล</h3>
+                    <h3><i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัลและหลักฐาน</h3>
                     <div class="table-responsive">
                         <table class="data-table">
                             <thead>
                                 <tr>
                                     <th>รหัสอ้างอิง</th>
                                     <th>วัน-เวลา</th>
-                                    <th>ของรางวัล</th>
+                                    <th>ของรางวัลที่แลก</th>
                                     <th>แต้มที่ใช้</th>
                                     <th>สถานะ</th>
                                     <th>หลักฐาน</th>
@@ -289,54 +235,84 @@
                     </div>
                 </div>
             </div>
+
+            <!-- แท็บประวัติการหมุนวงล้อและรางวัลวงล้อ (Member) -->
+            <div id="mem-tab-spin-history" class="tab-content">
+                <div class="card-box">
+                    <div class="card-header-flex">
+                        <h3 style="margin-bottom: 0;"><i class="fa-solid fa-dharmachakra"></i> ประวัติการหมุนวงล้อและรางวัลที่ได้รับ</h3>
+                        <button type="button" class="btn btn-secondary" style="padding: 7px 14px; font-size: 13px;" onclick="openLuckySpinModal()">
+                            <i class="fa-solid fa-play"></i> ไปหมุนวงล้อเพิ่ม
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>รหัสอ้างอิง</th>
+                                    <th>วัน-เวลา</th>
+                                    <th>รางวัลที่ได้จากวงล้อ</th>
+                                    <th>แต้มที่ใช้</th>
+                                    <th>ผลสุทธิ</th>
+                                    <th>หลักฐาน</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mem-spin-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </main>
 
         <!-- ==========================================
-             2. ระบบผู้ดูแลร้าน (Admin Dashboard)
+             มุมมองที่ 2.2: ระบบสำหรับผู้ดูแลร้าน (Admin View)
              ========================================== -->
         <main id="admin-dashboard" class="container hidden">
-            <!-- การ์ดสรุปสถิติภาพรวม -->
+            <!-- แถบสถิติภาพรวม (KPI Summary) -->
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon blue"><i class="fa-solid fa-users"></i></div>
-                    <div>
+                    <div class="stat-details">
                         <span>สมาชิกทั้งหมด</span>
                         <h3 id="stat-total-members">0</h3>
                     </div>
                 </div>
-                <div class="stat-card highlight-yellow">
-                    <div class="stat-icon yellow"><i class="fa-solid fa-coins"></i></div>
-                    <div>
-                        <span>แต้มที่แจกทั้งหมด</span>
+                <div class="stat-card">
+                    <div class="stat-icon yellow"><i class="fa-solid fa-star"></i></div>
+                    <div class="stat-details">
+                        <span>แต้มที่แจกไปแล้ว</span>
                         <h3 id="stat-total-points">0</h3>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon red"><i class="fa-solid fa-gift"></i></div>
-                    <div>
-                        <span>รายการแลกรางวัล</span>
+                    <div class="stat-icon green"><i class="fa-solid fa-gift"></i></div>
+                    <div class="stat-details">
+                        <span>รายการแลกรางวัลทั้งหมด</span>
                         <h3 id="stat-total-redemptions">0</h3>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon green"><i class="fa-solid fa-baht-sign"></i></div>
-                    <div>
+                    <div class="stat-icon purple"><i class="fa-solid fa-baht-sign"></i></div>
+                    <div class="stat-details">
                         <span>ยอดขายสะสม (บาท)</span>
                         <h3 id="stat-total-sales">0</h3>
                     </div>
                 </div>
             </div>
 
-            <!-- เมนูย่อยฝั่งแอดมิน -->
+            <!-- เมนูจัดการสำหรับผู้ดูแลร้าน -->
             <div class="sub-nav">
                 <button type="button" class="sub-nav-btn active" onclick="switchAdminTab('pos', this)">
-                    <i class="fa-solid fa-cash-register"></i> บันทึกยอดซื้อ / ยิงบาร์โค้ด
+                    <i class="fa-solid fa-cash-register"></i> บันทึกยอดซื้อ & แจกแต้ม
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('redemptions', this)">
-                    <i class="fa-solid fa-gift"></i> ประวัติการแลกรางวัล
+                    <i class="fa-solid fa-receipt"></i> ประวัติการแลกรางวัล
+                </button>
+                <button type="button" class="sub-nav-btn" onclick="switchAdminTab('spins', this)">
+                    <i class="fa-solid fa-dharmachakra"></i> ประวัติวงล้อ
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('promotions', this)">
-                    <i class="fa-solid fa-bullhorn"></i> โปรโมชั่น / แบนเนอร์
+                    <i class="fa-solid fa-bullhorn"></i> จัดการโปรโมชั่น
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('members', this)">
                     <i class="fa-solid fa-user-gear"></i> จัดการสมาชิก
@@ -345,72 +321,153 @@
                     <i class="fa-solid fa-boxes-stacked"></i> จัดการของรางวัล
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('reports', this)">
-                    <i class="fa-solid fa-chart-pie"></i> รายงานสรุป & ประวัติแก้แต้ม
+                    <i class="fa-solid fa-chart-pie"></i> รายงานสรุป & Audit Log
                 </button>
             </div>
 
-            <!-- แท็บ 1: บันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS รองรับเครื่องยิงบาร์โค้ด) + ตั้งค่าวงล้อ -->
+            <!-- แท็บ 1: บันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS + Barcode Scanner) -->
             <div id="admin-tab-pos" class="tab-content active">
-                <div class="pos-grid">
+                <div class="grid-2-col">
                     <div class="card-box">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
-                            <h3 style="margin-bottom: 0;"><i class="fa-solid fa-barcode"></i> ยิงบาร์โค้ดลูกค้า / บันทึกยอดซื้อ</h3>
-                            <span style="background: #DBEAFE; color: var(--primary-blue); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px;">
-                                <i class="fa-solid fa-bolt"></i> พร้อมรับสัญญาณเครื่องยิง
-                            </span>
-                        </div>
-                        <form id="pos-purchase-form" onsubmit="handleRecordPurchase(event)">
+                        <h3><i class="fa-solid fa-barcode"></i> สแกนบาร์โค้ด / บันทึกยอดซื้อให้สมาชิก</h3>
+                        <form id="pos-form" onsubmit="handleRecordPurchase(event)">
                             <div class="form-group">
-                                <label for="pos-member-search">ยิงบาร์โค้ดลูกค้า (หรือพิมพ์เบอร์โทรศัพท์ / ชื่อ)</label>
-                                <div style="display: flex; gap: 8px;">
-                                    <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="ยิงบาร์โค้ดได้เลยทันที..." oninput="handlePOSMemberSearch()" onkeydown="handlePOSBarcodeKeydown(event)" required autocomplete="off" style="border-color: var(--primary-blue); background: #F8FAFC; font-weight: 600;">
-                                    <button type="button" class="btn btn-outline" onclick="clearPOSMember()" title="ล้างข้อมูลเพื่อยิงลูกค้ารายถัดไป" style="padding: 8px 12px; flex-shrink: 0;">
-                                        <i class="fa-solid fa-eraser"></i> ยิงใหม่
+                                <label for="pos-member-search">ยิงบาร์โค้ดสมาชิก หรือพิมพ์เบอร์โทรศัพท์</label>
+                                <div class="pos-barcode-input-wrap">
+                                    <i class="fa-solid fa-barcode barcode-prefix-icon"></i>
+                                    <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="คลิกช่องนี้แล้วยิงบาร์โค้ดสมาชิกได้เลย..." oninput="handlePOSMemberSearch()" onkeydown="handlePOSBarcodeKeydown(event)" autocomplete="off" required>
+                                    <button type="button" class="btn-clear-pos" onclick="clearPOSMember()" title="ล้างค่าและพร้อมสแกนคนถัดไป">
+                                        <i class="fa-solid fa-xmark"></i>
                                     </button>
                                 </div>
                                 <datalist id="pos-members-datalist"></datalist>
-                                <input type="hidden" id="pos-selected-user-id">
+                                <input type="hidden" id="pos-selected-user-id" required>
                                 <div id="pos-member-status" style="margin-top: 8px;"></div>
                             </div>
                             <div class="form-group">
-                                <label for="pos-amount">ยอดซื้อสินค้า (บาท)
-                                    <span class="quick-price-btns">
-                                        <button type="button" class="btn-outline-sm" onclick="setQuickAmount(35)">35฿</button>
-                                        <button type="button" class="btn-outline-sm" onclick="setQuickAmount(45)">45฿</button>
-                                        <button type="button" class="btn-outline-sm" onclick="setQuickAmount(60)">60฿</button>
-                                        <button type="button" class="btn-outline-sm" onclick="setQuickAmount(100)">100฿</button>
-                                    </span>
-                                </label>
-                                <input type="number" id="pos-amount" min="1" step="0.01" required placeholder="0.00" oninput="calculatePreviewPoints()">
+                                <label for="pos-amount">ยอดซื้อสินค้า (บาท)</label>
+                                <input type="number" id="pos-amount" min="1" step="1" placeholder="ระบุจำนวนเงิน เช่น 120" oninput="calculatePreviewPoints()" required>
+                                <div class="quick-amounts" style="display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline-sm" onclick="setQuickAmount(20)">+20 ฿</button>
+                                    <button type="button" class="btn btn-outline-sm" onclick="setQuickAmount(40)">+40 ฿</button>
+                                    <button type="button" class="btn btn-outline-sm" onclick="setQuickAmount(60)">+60 ฿</button>
+                                    <button type="button" class="btn btn-outline-sm" onclick="setQuickAmount(100)">+100 ฿</button>
+                                    <button type="button" class="btn btn-outline-sm" onclick="setQuickAmount(200)">+200 ฿</button>
+                                </div>
                             </div>
                             <div class="form-group">
-                                <label for="pos-note">หมายเหตุ (ไม่บังคับ)</label>
-                                <input type="text" id="pos-note" placeholder="เช่น ซื้อเครื่องดื่ม 2 แก้ว">
+                                <label for="pos-note">รายละเอียดรายการ (ไม่บังคับ)</label>
+                                <input type="text" id="pos-note" placeholder="เช่น ชาเขียวเย็น + ขนมปังปิ้ง">
                             </div>
                             <div class="points-preview-box">
                                 <span>แต้มที่จะได้รับอัตโนมัติ:</span>
                                 <strong id="pos-preview-points">0 แต้ม</strong>
                             </div>
                             <button type="submit" id="btn-pos-submit" class="btn btn-primary btn-block">
-                                <i class="fa-solid fa-circle-check"></i> บันทึกยอดซื้อและเพิ่มแต้ม
+                                <i class="fa-solid fa-circle-check"></i> ยืนยันบันทึกยอดและเพิ่มแต้ม
                             </button>
                         </form>
                     </div>
 
                     <div class="card-box">
-                        <h3><i class="fa-solid fa-sliders"></i> ตั้งค่าอัตราการคำนวณแต้ม</h3>
-                        <p class="text-muted">กำหนดจำนวนเงิน (บาท) ต่อการได้รับ 1 แต้ม</p>
-                        <form onsubmit="handleUpdateRate(event)" class="rate-form">
+                        <h3><i class="fa-solid fa-sliders"></i> ตั้งค่าอัตราคำนวณแต้ม</h3>
+                        <form id="rate-settings-form" onsubmit="handleUpdateRate(event)">
                             <div class="form-group">
-                                <label for="setting-baht-per-point">ทุกๆ ยอดซื้อ (บาท)</label>
-                                <input type="number" id="setting-baht-per-point" min="1" required>
+                                <label for="setting-baht-per-point">ยอดซื้อกี่บาท = 1 แต้ม</label>
+                                <input type="number" id="setting-baht-per-point" min="1" value="20" required>
                             </div>
-                            <button type="submit" id="btn-save-rate" class="btn btn-secondary">
-                                <i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่า
+                            <button type="submit" class="btn btn-secondary">
+                                <i class="fa-solid fa-floppy-disk"></i> บันทึกอัตราแต้ม
                             </button>
                         </form>
+
                         <hr class="divider">
-                        <h4>ประวัติการให้แต้มล่าสุด</h4>
+
+                        <h3><i class="fa-solid fa-dharmachakra"></i> ตั้งค่ารางวัลในวงล้อลุ้นแต้ม (6 ช่อง)</h3>
+                        <form id="spin-settings-form" onsubmit="handleSaveSpinSettings(event)">
+                            <div class="grid-2-col" style="gap: 10px; margin-bottom: 10px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="spin-cfg-enabled">สถานะวงล้อ</label>
+                                    <select id="spin-cfg-enabled">
+                                        <option value="1">เปิดใช้งาน</option>
+                                        <option value="0">ปิดชั่วคราว</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="spin-cfg-cost">ใช้แต้มต่อ 1 หมุน (0 = ฟรี)</label>
+                                    <input type="number" id="spin-cfg-cost" min="0" value="3" required>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                                <small style="color: var(--text-muted);">* ช่องได้แต้มระบุเลขแต้ม | ช่องสิ่งของ/ไม่ได้แต้มใส่ 0</small>
+                                <span id="spin-total-weight-badge" style="font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px; background: #DCFCE7; color: #166534;">ผลรวมโอกาส: 100%</span>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                                <div class="spin-slot-cfg-box">
+                                    <label style="font-size: 12px; font-weight: 700; color: #1E3A8A;">ช่อง 1 (น้ำเงิน)</label>
+                                    <input type="text" id="spin-label-0" maxlength="16" placeholder="ข้อความบนวงล้อ เช่น +1 แต้ม" style="padding: 6px 8px; font-size: 13px; margin-bottom: 4px;" required>
+                                    <div style="display: flex; gap: 4px;">
+                                        <input type="number" id="spin-prize-0" min="0" placeholder="แต้ม" title="จำนวนแต้มที่บวกให้" style="padding: 6px 8px; font-size: 13px;" required>
+                                        <input type="number" id="spin-weight-0" min="0" max="100" step="1" placeholder="%" title="โอกาสออก (%)" oninput="updateSpinWeightSummary()" style="padding: 6px 8px; font-size: 13px;" required>
+                                    </div>
+                                </div>
+                                <div class="spin-slot-cfg-box">
+                                    <label style="font-size: 12px; font-weight: 700; color: #B45309;">ช่อง 2 (เหลือง)</label>
+                                    <input type="text" id="spin-label-1" maxlength="16" placeholder="ข้อความบนวงล้อ เช่น +3 แต้ม" style="padding: 6px 8px; font-size: 13px; margin-bottom: 4px;" required>
+                                    <div style="display: flex; gap: 4px;">
+                                        <input type="number" id="spin-prize-1" min="0" placeholder="แต้ม" title="จำนวนแต้มที่บวกให้" style="padding: 6px 8px; font-size: 13px;" required>
+                                        <input type="number" id="spin-weight-1" min="0" max="100" step="1" placeholder="%" title="โอกาสออก (%)" oninput="updateSpinWeightSummary()" style="padding: 6px 8px; font-size: 13px;" required>
+                                    </div>
+                                </div>
+                                <div class="spin-slot-cfg-box">
+                                    <label style="font-size: 12px; font-weight: 700; color: #15803D;">ช่อง 3 (เขียว)</label>
+                                    <input type="text" id="spin-label-2" maxlength="16" placeholder="ข้อความบนวงล้อ เช่น +5 แต้ม" style="padding: 6px 8px; font-size: 13px; margin-bottom: 4px;" required>
+                                    <div style="display: flex; gap: 4px;">
+                                        <input type="number" id="spin-prize-2" min="0" placeholder="แต้ม" title="จำนวนแต้มที่บวกให้" style="padding: 6px 8px; font-size: 13px;" required>
+                                        <input type="number" id="spin-weight-2" min="0" max="100" step="1" placeholder="%" title="โอกาสออก (%)" oninput="updateSpinWeightSummary()" style="padding: 6px 8px; font-size: 13px;" required>
+                                    </div>
+                                </div>
+                                <div class="spin-slot-cfg-box">
+                                    <label style="font-size: 12px; font-weight: 700; color: #0284C7;">ช่อง 4 (ฟ้า)</label>
+                                    <input type="text" id="spin-label-3" maxlength="16" placeholder="ข้อความบนวงล้อ เช่น +2 แต้ม" style="padding: 6px 8px; font-size: 13px; margin-bottom: 4px;" required>
+                                    <div style="display: flex; gap: 4px;">
+                                        <input type="number" id="spin-prize-3" min="0" placeholder="แต้ม" title="จำนวนแต้มที่บวกให้" style="padding: 6px 8px; font-size: 13px;" required>
+                                        <input type="number" id="spin-weight-3" min="0" max="100" step="1" placeholder="%" title="โอกาสออก (%)" oninput="updateSpinWeightSummary()" style="padding: 6px 8px; font-size: 13px;" required>
+                                    </div>
+                                </div>
+                                <div class="spin-slot-cfg-box">
+                                    <label style="font-size: 12px; font-weight: 700; color: #7C3AED;">ช่อง 5 (ม่วง)</label>
+                                    <input type="text" id="spin-label-4" maxlength="16" placeholder="ข้อความบนวงล้อ เช่น +10 แต้ม" style="padding: 6px 8px; font-size: 13px; margin-bottom: 4px;" required>
+                                    <div style="display: flex; gap: 4px;">
+                                        <input type="number" id="spin-prize-4" min="0" placeholder="แต้ม" title="จำนวนแต้มที่บวกให้" style="padding: 6px 8px; font-size: 13px;" required>
+                                        <input type="number" id="spin-weight-4" min="0" max="100" step="1" placeholder="%" title="โอกาสออก (%)" oninput="updateSpinWeightSummary()" style="padding: 6px 8px; font-size: 13px;" required>
+                                    </div>
+                                </div>
+                                <div class="spin-slot-cfg-box">
+                                    <label style="font-size: 12px; font-weight: 700; color: #DC2626;">ช่อง 6 (แดง)</label>
+                                    <input type="text" id="spin-label-5" maxlength="16" placeholder="ข้อความบนวงล้อ เช่น +15 แต้ม" style="padding: 6px 8px; font-size: 13px; margin-bottom: 4px;" required>
+                                    <div style="display: flex; gap: 4px;">
+                                        <input type="number" id="spin-prize-5" min="0" placeholder="แต้ม" title="จำนวนแต้มที่บวกให้" style="padding: 6px 8px; font-size: 13px;" required>
+                                        <input type="number" id="spin-weight-5" min="0" max="100" step="1" placeholder="%" title="โอกาสออก (%)" oninput="updateSpinWeightSummary()" style="padding: 6px 8px; font-size: 13px;" required>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <button type="submit" id="btn-save-spin-cfg" class="btn btn-primary">
+                                    <i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าวงล้อ
+                                </button>
+                                <button type="button" class="btn btn-outline-sm" onclick="resetSpinSettingsDefault()">
+                                    <i class="fa-solid fa-rotate-left"></i> คืนค่าเริ่มต้น
+                                </button>
+                            </div>
+                        </form>
+
+                        <hr class="divider">
+
+                        <h4>รายการแจกแต้มล่าสุด</h4>
                         <div class="table-responsive">
                             <table class="data-table compact">
                                 <thead>
@@ -425,114 +482,19 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- กล่องตั้งค่ารางวัลในวงล้อลุ้นแต้ม (สำหรับแอดมิน) -->
-                <div class="card-box" style="margin-top: 20px;">
-                    <div class="card-header-flex">
-                        <h3 style="margin-bottom: 0;"><i class="fa-solid fa-dharmachakra"></i> ตั้งค่ารางวัลวงล้อลุ้นแต้ม (Lucky Spin)</h3>
-                        <span id="spin-total-weight-badge" style="font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 20px; background: #DCFCE7; color: #166534;">
-                            ผลรวมโอกาสออกรางวัล: 100%
-                        </span>
-                    </div>
-                    <form onsubmit="handleSaveSpinSettings(event)">
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label for="spin-cfg-enabled">สถานะวงล้อลุ้นแต้ม</label>
-                                <select id="spin-cfg-enabled">
-                                    <option value="1">เปิดใช้งานให้สมาชิกเล่นได้</option>
-                                    <option value="0">ปิดซ่อนชั่วคราว</option>
-                                </select>
-                            </div>
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label for="spin-cfg-cost">แต้มที่ใช้ต่อการหมุน 1 ครั้ง (ใส่ 0 = หมุนฟรี)</label>
-                                <input type="number" id="spin-cfg-cost" min="0" required placeholder="เช่น 3">
-                            </div>
-                        </div>
-
-                        <div class="spin-config-grid">
-                            <div class="spin-slot-box" style="border-top: 4px solid #FACC15;">
-                                <span class="slot-title">ช่องที่ 1 (สีเหลือง)</span>
-                                <label for="spin-label-0">ชื่อรางวัลบนวงล้อ</label>
-                                <input type="text" id="spin-label-0" placeholder="เช่น +1 แต้ม" required>
-                                <label for="spin-prize-0">แต้มที่บวกเพิ่มอัตโนมัติ</label>
-                                <input type="number" id="spin-prize-0" min="0" required>
-                                <label for="spin-weight-0">โอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-0" min="0" max="100" oninput="updateSpinWeightSummary()" required>
-                            </div>
-                            <div class="spin-slot-box" style="border-top: 4px solid #3B82F6;">
-                                <span class="slot-title">ช่องที่ 2 (สีน้ำเงิน)</span>
-                                <label for="spin-label-1">ชื่อรางวัลบนวงล้อ</label>
-                                <input type="text" id="spin-label-1" placeholder="เช่น +3 แต้ม" required>
-                                <label for="spin-prize-1">แต้มที่บวกเพิ่มอัตโนมัติ</label>
-                                <input type="number" id="spin-prize-1" min="0" required>
-                                <label for="spin-weight-1">โอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-1" min="0" max="100" oninput="updateSpinWeightSummary()" required>
-                            </div>
-                            <div class="spin-slot-box" style="border-top: 4px solid #16A34A;">
-                                <span class="slot-title">ช่องที่ 3 (สีเขียว)</span>
-                                <label for="spin-label-2">ชื่อรางวัลบนวงล้อ</label>
-                                <input type="text" id="spin-label-2" placeholder="เช่น +5 แต้ม" required>
-                                <label for="spin-prize-2">แต้มที่บวกเพิ่มอัตโนมัติ</label>
-                                <input type="number" id="spin-prize-2" min="0" required>
-                                <label for="spin-weight-2">โอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-2" min="0" max="100" oninput="updateSpinWeightSummary()" required>
-                            </div>
-                            <div class="spin-slot-box" style="border-top: 4px solid #F97316;">
-                                <span class="slot-title">ช่องที่ 4 (สีส้ม)</span>
-                                <label for="spin-label-3">ชื่อรางวัลบนวงล้อ</label>
-                                <input type="text" id="spin-label-3" placeholder="เช่น +2 แต้ม" required>
-                                <label for="spin-prize-3">แต้มที่บวกเพิ่มอัตโนมัติ</label>
-                                <input type="number" id="spin-prize-3" min="0" required>
-                                <label for="spin-weight-3">โอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-3" min="0" max="100" oninput="updateSpinWeightSummary()" required>
-                            </div>
-                            <div class="spin-slot-box" style="border-top: 4px solid #8B5CF6;">
-                                <span class="slot-title">ช่องที่ 5 (สีม่วง)</span>
-                                <label for="spin-label-4">ชื่อรางวัลบนวงล้อ</label>
-                                <input type="text" id="spin-label-4" placeholder="เช่น +10 แต้ม" required>
-                                <label for="spin-prize-4">แต้มที่บวกเพิ่มอัตโนมัติ</label>
-                                <input type="number" id="spin-prize-4" min="0" required>
-                                <label for="spin-weight-4">โอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-4" min="0" max="100" oninput="updateSpinWeightSummary()" required>
-                            </div>
-                            <div class="spin-slot-box" style="border-top: 4px solid #EF4444;">
-                                <span class="slot-title">ช่องที่ 6 (สีแดง)</span>
-                                <label for="spin-label-5">ชื่อรางวัลบนวงล้อ</label>
-                                <input type="text" id="spin-label-5" placeholder="เช่น ฟรีน้ำ 1 แก้ว" required>
-                                <label for="spin-prize-5">แต้มที่บวกเพิ่มอัตโนมัติ</label>
-                                <input type="number" id="spin-prize-5" min="0" required>
-                                <label for="spin-weight-5">โอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-5" min="0" max="100" oninput="updateSpinWeightSummary()" required>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">
-                            * <strong>หมายเหตุ:</strong> หากช่องใดเป็นของรางวัลหน้าร้าน (ไม่ได้แจกเป็นแต้ม) ให้ตั้งชื่อรางวัลบนวงล้อ (เช่น <code>ฟรีน้ำ 1 แก้ว</code>) และใส่แต้มที่บวกเพิ่มเป็น <code>0</code> ระบบจะบันทึกชื่อรางวัลลงในประวัติสมาชิกให้แสดงหน้าร้านได้ทันที
-                        </div>
-
-                        <div style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 10px;">
-                            <button type="button" class="btn btn-outline" onclick="resetSpinSettingsDefault()">
-                                <i class="fa-solid fa-rotate-left"></i> คืนค่าเริ่มต้น
-                            </button>
-                            <button type="submit" id="btn-save-spin-cfg" class="btn btn-primary">
-                                <i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าวงล้อ
-                            </button>
-                        </div>
-                    </form>
-                </div>
             </div>
 
-            <!-- แท็บ 2: ประวัติการแลกของรางวัลอัตโนมัติ -->
+            <!-- แท็บ 2: ประวัติการแลกของรางวัล -->
             <div id="admin-tab-redemptions" class="tab-content">
                 <div class="card-box">
-                    <h3><i class="fa-solid fa-gift"></i> ประวัติการแลกของรางวัลทั้งหมด</h3>
+                    <h3><i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัลของสมาชิก (ตัดแต้มอัตโนมัติ)</h3>
                     <div class="table-responsive">
                         <table class="data-table">
                             <thead>
                                 <tr>
                                     <th>รหัสอ้างอิง</th>
                                     <th>วัน-เวลา</th>
-                                    <th>ชื่อสมาชิก</th>
+                                    <th>สมาชิก</th>
                                     <th>ของรางวัลที่แลก</th>
                                     <th>แต้มที่ใช้</th>
                                     <th>สถานะ</th>
@@ -544,11 +506,39 @@
                 </div>
             </div>
 
-            <!-- แท็บ 3: จัดการโปรโมชั่น / แบนเนอร์ -->
+            <!-- แท็บ 3: ประวัติการหมุนวงล้อและรางวัลวงล้อทั้งหมด (Admin) -->
+            <div id="admin-tab-spins" class="tab-content">
+                <div class="card-box">
+                    <div class="card-header-flex">
+                        <h3 style="margin-bottom: 0;"><i class="fa-solid fa-dharmachakra"></i> ประวัติการหมุนวงล้อและรางวัลวงล้อทั้งหมด</h3>
+                        <div class="action-bar">
+                            <input type="text" id="admin-spin-search" placeholder="ค้นหาชื่อ / เบอร์โทร / รางวัล..." oninput="renderAdminSpinHistory()">
+                        </div>
+                    </div>
+                    <div id="admin-spin-kpi" class="report-kpi-grid" style="margin-bottom: 18px;"></div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>รหัสอ้างอิง</th>
+                                    <th>วัน-เวลา</th>
+                                    <th>สมาชิก</th>
+                                    <th>รางวัลที่สุ่มได้</th>
+                                    <th>แต้มที่ใช้</th>
+                                    <th>ผลต่างแต้มสุทธิ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-spins-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- แท็บ 4: จัดการแบนเนอร์โปรโมชั่น -->
             <div id="admin-tab-promotions" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
-                        <h3><i class="fa-solid fa-bullhorn"></i> จัดการโปรโมชั่นและแบนเนอร์หน้าร้าน</h3>
+                        <h3><i class="fa-solid fa-bullhorn"></i> จัดการแบนเนอร์โปรโมชั่นและข่าวสารหน้าร้าน</h3>
                         <button type="button" class="btn btn-primary" onclick="openPromoModal()">
                             <i class="fa-solid fa-plus"></i> เพิ่มแบนเนอร์โปรโมชั่น
                         </button>
@@ -557,15 +547,15 @@
                 </div>
             </div>
 
-            <!-- แท็บ 4: จัดการข้อมูลสมาชิก -->
+            <!-- แท็บ 5: จัดการข้อมูลสมาชิก (CRUD) -->
             <div id="admin-tab-members" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
-                        <h3><i class="fa-solid fa-user-gear"></i> จัดการข้อมูลสมาชิก</h3>
+                        <h3><i class="fa-solid fa-users-gear"></i> รายชื่อสมาชิกในระบบ</h3>
                         <div class="action-bar">
-                            <input type="text" id="member-search" placeholder="ค้นหาชื่อ / เบอร์โทรศัพท์..." oninput="renderAdminMembers()">
+                            <input type="text" id="member-search" placeholder="ค้นหาชื่อ / เบอร์โทร..." oninput="renderAdminMembers()">
                             <button type="button" class="btn btn-primary" onclick="openMemberModal()">
-                                <i class="fa-solid fa-plus"></i> เพิ่มสมาชิก
+                                <i class="fa-solid fa-user-plus"></i> เพิ่มสมาชิกใหม่
                             </button>
                         </div>
                     </div>
@@ -574,9 +564,9 @@
                             <thead>
                                 <tr>
                                     <th>เบอร์โทรศัพท์</th>
-                                    <th>ชื่อ-นามสกุล (Username)</th>
+                                    <th>ชื่อ-นามสกุล</th>
                                     <th>ระดับ</th>
-                                    <th>แต้มสะสม</th>
+                                    <th>แต้มสะสมคงเหลือ</th>
                                     <th>จัดการ</th>
                                 </tr>
                             </thead>
@@ -586,11 +576,11 @@
                 </div>
             </div>
 
-            <!-- แท็บ 5: จัดการของรางวัล -->
+            <!-- แท็บ 6: จัดการของรางวัล (CRUD) -->
             <div id="admin-tab-rewards" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
-                        <h3><i class="fa-solid fa-boxes-stacked"></i> จัดการรายการของรางวัล</h3>
+                        <h3><i class="fa-solid fa-gifts"></i> จัดการรายการของรางวัล</h3>
                         <button type="button" class="btn btn-primary" onclick="openRewardModal()">
                             <i class="fa-solid fa-plus"></i> เพิ่มของรางวัลใหม่
                         </button>
@@ -599,236 +589,277 @@
                 </div>
             </div>
 
-            <!-- แท็บ 6: รายงานสรุปยอดขายรายวัน/รายเดือน & Audit Log -->
+            <!-- แท็บ 7: รายงานสรุปผล & Audit Log -->
             <div id="admin-tab-reports" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
-                        <h3><i class="fa-solid fa-chart-pie"></i> รายงานสรุปยอดขายและแต้มสะสม</h3>
-                        <div class="action-bar">
-                            <button type="button" class="btn btn-secondary" onclick="exportReportCSV()">
+                        <h3><i class="fa-solid fa-chart-line"></i> รายงานสรุปยอดขาย แต้มสะสม และประวัติแก้แต้ม (Audit Log)</h3>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button type="button" id="rep-filter-today" class="btn btn-primary" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('today')">วันนี้</button>
+                            <button type="button" id="rep-filter-week" class="btn btn-outline" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('week')">7 วันล่าสุด</button>
+                            <button type="button" id="rep-filter-month" class="btn btn-outline" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('month')">เดือนนี้</button>
+                            <button type="button" id="rep-filter-all" class="btn btn-outline" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('all')">ทั้งหมด</button>
+                            <button type="button" class="btn btn-secondary" style="padding: 6px 12px; font-size: 13px;" onclick="exportReportCSV()">
                                 <i class="fa-solid fa-file-csv"></i> ส่งออก CSV
-                            </button>
-                            <button type="button" class="btn btn-primary" onclick="window.print()">
-                                <i class="fa-solid fa-print"></i> พิมพ์รายงาน
                             </button>
                         </div>
                     </div>
-
-                    <!-- ปุ่มกรองช่วงเวลารายงาน -->
-                    <div class="report-filter-bar">
-                        <button type="button" id="rep-filter-today" class="btn btn-primary" onclick="setReportPeriod('today')">วันนี้</button>
-                        <button type="button" id="rep-filter-week" class="btn btn-outline" onclick="setReportPeriod('week')">7 วันล่าสุด</button>
-                        <button type="button" id="rep-filter-month" class="btn btn-outline" onclick="setReportPeriod('month')">เดือนนี้</button>
-                        <button type="button" id="rep-filter-all" class="btn btn-outline" onclick="setReportPeriod('all')">ทั้งหมด</button>
-                    </div>
-
-                    <div id="report-summary-content" class="report-grid"></div>
+                    <div id="report-summary-content" class="report-box"></div>
                 </div>
             </div>
         </main>
     </div>
 
-    <!-- Modal ปฏิทินการเช็กอินรายวัน (Check-in Calendar) -->
-    <div id="checkin-calendar-modal" class="modal hidden" role="dialog" aria-modal="true">
-        <div class="modal-content" style="max-width: 430px;">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-calendar-days" style="color: var(--primary-blue);"></i> ปฏิทินการเช็กอินของคุณ</h3>
-                <button type="button" class="close-btn" onclick="closeModal('checkin-calendar-modal')" aria-label="ปิด">&times;</button>
-            </div>
-
-            <div class="cal-nav-bar">
-                <button type="button" class="btn btn-outline-sm" onclick="changeCalendarMonth(-1)" aria-label="เดือนก่อนหน้า">
-                    <i class="fa-solid fa-chevron-left"></i>
-                </button>
-                <strong id="cal-month-title" style="color: var(--primary-blue); font-size: 16px;">-</strong>
-                <button type="button" class="btn btn-outline-sm" onclick="changeCalendarMonth(1)" aria-label="เดือนถัดไป">
-                    <i class="fa-solid fa-chevron-right"></i>
-                </button>
-            </div>
-
-            <div class="cal-weekdays">
-                <div>อา</div>
-                <div>จ</div>
-                <div>อ</div>
-                <div>พ</div>
-                <div>พฤ</div>
-                <div>ศ</div>
-                <div>ส</div>
-            </div>
-
-            <div id="cal-days-grid" class="cal-days-grid"></div>
-
-            <div class="cal-legend">
-                <span><i class="cal-dot checked"></i> เช็กอินแล้ว</span>
-                <span><i class="cal-dot today"></i> วันนี้</span>
-                <strong id="cal-month-summary" style="color: var(--success-green); margin-left: auto;">เช็กอินเดือนนี้ 0 วัน</strong>
-            </div>
-
-            <button type="button" class="btn btn-primary btn-block" style="margin-top: 14px;" onclick="closeModal('checkin-calendar-modal')">ปิดปฏิทิน</button>
-        </div>
-    </div>
-
-    <!-- Modal วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin) -->
-    <div id="spin-modal" class="modal hidden" role="dialog" aria-modal="true">
-        <div class="modal-content" style="max-width: 420px; text-align: center;">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-dharmachakra" style="color: #D97706;"></i> วงล้อลุ้นแต้มมหาสนุก</h3>
-                <button type="button" class="close-btn" onclick="closeModal('spin-modal')" aria-label="ปิด">&times;</button>
-            </div>
-            <p id="spin-desc-text" style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-                ใช้ <strong>3 แต้ม</strong> ต่อการหมุน 1 ครั้ง ลุ้นรับโบนัสแต้มเพิ่ม!
-            </p>
-            <div style="font-size: 14px; font-weight: 600; color: var(--primary-blue); margin-bottom: 14px;">
-                แต้มคงเหลือของคุณ: <span id="spin-user-points" style="font-size: 18px; color: #D97706;">0</span> แต้ม
-            </div>
-
-            <div class="wheel-container">
-                <div class="wheel-pointer">▼</div>
-                <div id="lucky-wheel" class="lucky-wheel">
-                    <div id="wheel-lbl-0" class="wheel-label" style="transform: rotate(30deg) translateY(-92px);">+1 แต้ม</div>
-                    <div id="wheel-lbl-1" class="wheel-label" style="transform: rotate(90deg) translateY(-92px);">+3 แต้ม</div>
-                    <div id="wheel-lbl-2" class="wheel-label" style="transform: rotate(150deg) translateY(-92px);">+5 แต้ม</div>
-                    <div id="wheel-lbl-3" class="wheel-label" style="transform: rotate(210deg) translateY(-92px);">+2 แต้ม</div>
-                    <div id="wheel-lbl-4" class="wheel-label" style="transform: rotate(270deg) translateY(-92px);">+10 แต้ม</div>
-                    <div id="wheel-lbl-5" class="wheel-label" style="transform: rotate(330deg) translateY(-92px);">+15 แต้ม</div>
-                </div>
-            </div>
-
-            <div id="spin-result-box" style="min-height: 28px; margin: 12px 0; font-weight: 700; font-size: 16px; color: var(--success-green);"></div>
-
-            <button type="button" id="btn-spin-now" class="btn btn-secondary btn-block" style="font-size: 16px; padding: 12px;" onclick="handleSpinWheel()">
-                <i class="fa-solid fa-play"></i> หมุนวงล้อเลย!
-            </button>
-        </div>
-    </div>
-
-    <!-- Modal ลืมรหัสผ่าน (รีเซ็ตรหัสผ่านด้วยตนเอง) -->
-    <div id="forgot-modal" class="modal hidden" role="dialog" aria-modal="true">
-        <div class="modal-content" style="max-width: 420px;">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-key"></i> ตั้งรหัสผ่านใหม่</h3>
-                <button type="button" class="close-btn" onclick="closeModal('forgot-modal')" aria-label="ปิด">&times;</button>
-            </div>
-            <form onsubmit="handleForgotPassword(event)">
-                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-                    กรอกเบอร์โทรศัพท์และชื่อ-นามสกุลให้ตรงกับที่สมัครไว้ เพื่อตั้งรหัสผ่านใหม่ได้ทันที
-                </p>
-                <div class="form-group">
-                    <label for="forgot-phone">เบอร์โทรศัพท์ที่ลงทะเบียนไว้</label>
-                    <input type="tel" id="forgot-phone" required maxlength="10" placeholder="เช่น 0812345678">
-                </div>
-                <div class="form-group">
-                    <label for="forgot-fullname">ชื่อ-นามสกุลที่ใช้สมัคร (เพื่อยืนยันตัวตน)</label>
-                    <input type="text" id="forgot-fullname" required placeholder="เช่น นายสมชาย ใจดี">
-                </div>
-                <div class="form-group">
-                    <label for="forgot-new-password">รหัสผ่านใหม่</label>
-                    <input type="password" id="forgot-new-password" required placeholder="ตั้งรหัสผ่านใหม่">
-                </div>
-                <div class="form-group">
-                    <label for="forgot-confirm-password">ยืนยันรหัสผ่านใหม่</label>
-                    <input type="password" id="forgot-confirm-password" required placeholder="กรอกรหัสผ่านใหม่อีกครั้ง">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline" onclick="closeModal('forgot-modal')">ยกเลิก</button>
-                    <button type="submit" id="btn-forgot-submit" class="btn btn-primary">เปลี่ยนรหัสผ่านทันที</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal ขยายบาร์โค้ดสมาชิกเต็มจอ (สำหรับเครื่องยิงบาร์โค้ด) -->
-    <div id="barcode-modal" class="modal hidden" role="dialog" aria-modal="true">
-        <div class="modal-content" style="max-width: 420px; text-align: center;">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-barcode"></i> บาร์โค้ดสมาชิกดิจิทัล</h3>
-                <button type="button" class="close-btn" onclick="closeModal('barcode-modal')" aria-label="ปิด">&times;</button>
-            </div>
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">ยื่นหน้าจอนี้ให้พนักงานใช้เครื่องยิงบาร์โค้ดเพื่อสะสมแต้ม</p>
-            <div style="background: #FFFFFF; padding: 20px 14px; border-radius: 16px; border: 2px solid var(--primary-blue); margin-bottom: 12px; overflow-x: auto;">
-                <svg id="member-barcode-large"></svg>
-            </div>
-            <h4 id="barcode-modal-name" style="color: var(--primary-blue); font-size: 18px;">-</h4>
-            <p id="barcode-modal-phone" style="font-size: 20px; font-weight: 700; color: var(--text-dark); letter-spacing: 1px; margin: 4px 0 16px;">-</p>
-            <button type="button" class="btn btn-primary btn-block" onclick="closeModal('barcode-modal')">ปิดหน้าต่าง</button>
-        </div>
-    </div>
-
-    <!-- Modal ป๊อปอัพหลักฐานการแลกของรางวัล -->
+    <!-- ==========================================
+         Modal หลักฐานการแลกของรางวัล (Ticket Receipt)
+         ========================================== -->
     <div id="ticket-modal" class="modal hidden" role="dialog" aria-modal="true">
-        <div class="modal-content" style="max-width: 400px; text-align: center; border-top: 8px solid #16A34A;">
+        <div class="modal-content" style="max-width: 400px; text-align: center; border-top: 8px solid var(--success-green);">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-circle-check" style="color: #16A34A;"></i> แลกของรางวัลสำเร็จ!</h3>
+                <h3><i class="fa-solid fa-circle-check" style="color: var(--success-green);"></i> หลักฐานการแลกของรางวัล</h3>
                 <button type="button" class="close-btn" onclick="closeModal('ticket-modal')" aria-label="ปิด">&times;</button>
             </div>
-            <div style="background: #F8FAFC; border: 2px solid #E2E8F0; border-radius: 16px; padding: 16px; margin-bottom: 14px;">
-                <img id="ticket-reward-img" src="" alt="รูปของรางวัล" style="width: 100%; height: 170px; object-fit: cover; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.08);" onerror="this.src='https://via.placeholder.com/400x200?text=Reward'">
+            <div style="background: #F8FAFC; border: 2px dashed #CBD5E1; border-radius: 16px; padding: 18px; margin-bottom: 14px;">
+                <img id="ticket-reward-img" src="" alt="รูปของรางวัล" style="width: 140px; height: 140px; object-fit: cover; border-radius: 14px; margin: 0 auto 12px; border: 3px solid #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                 <span style="background: #DCFCE7; color: #166534; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 99px;">
-                    บันทึกประวัติเรียบร้อยแล้ว
+                    แลกของรางวัลสำเร็จแล้ว
                 </span>
                 <h4 id="ticket-reward-name" style="font-size: 20px; color: var(--primary-blue); margin: 10px 0 4px;">ชื่อของรางวัล</h4>
-                <p id="ticket-points-spent" style="font-size: 14px; font-weight: 600; color: #D97706; margin-bottom: 10px;">ใช้ไป 0 แต้ม</p>
+                <p id="ticket-points-spent" style="font-size: 14px; font-weight: 600; color: #D97706; margin-bottom: 12px;">ใช้ไป 0 แต้ม</p>
                 <div style="border-top: 1px dashed #CBD5E1; padding-top: 10px; font-size: 13px; color: var(--text-dark);">
                     <div id="ticket-code" style="font-weight: 700; color: var(--primary-blue); margin-bottom: 2px;">รหัสอ้างอิง: #0000</div>
                     <div id="ticket-member-info" style="color: var(--text-muted); margin-bottom: 2px;">ผู้แลก: -</div>
-                    <div id="ticket-date" style="font-size: 12px; color: var(--text-muted);">วัน-เวลา: -</div>
+                    <div id="ticket-date" style="font-size: 12px; color: var(--text-muted);">วัน-เวลาที่แลก: -</div>
                 </div>
             </div>
-            <p style="font-size: 13px; color: var(--text-dark); font-weight: 500; margin-bottom: 14px;">
-                กรุณาแสดงหน้าจอนี้ให้พนักงานหน้าร้านดูเพื่อรับของรางวัลได้เลยครับ
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px;">
+                กรุณาแสดงหน้าจอหลักฐานนี้ให้พนักงานหน้าร้านเพื่อรับของรางวัล
             </p>
             <button type="button" class="btn btn-primary btn-block" onclick="closeModal('ticket-modal')">ตกลง / ปิดหน้าต่าง</button>
         </div>
     </div>
 
-    <!-- Modal แก้ไขโปรไฟล์และเปลี่ยนรหัสผ่าน (สำหรับสมาชิก) -->
+    <!-- ==========================================
+         Modal ขยายบาร์โค้ดรหัสสมาชิก (Barcode Zoom)
+         ========================================== -->
+    <div id="barcode-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-content" style="max-width: 390px; text-align: center; border-top: 8px solid var(--primary-blue);">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-barcode"></i> บาร์โค้ดรหัสสมาชิก</h3>
+                <button type="button" class="close-btn" onclick="closeModal('barcode-modal')" aria-label="ปิด">&times;</button>
+            </div>
+            <p style="font-size: 13.5px; color: var(--text-muted); margin-bottom: 12px;">
+                ยื่นบาร์โค้ดนี้ให้พนักงานหน้าร้านสแกนเพื่อสะสมแต้ม
+            </p>
+            <div style="background: #FFFFFF; border: 2px solid #E2E8F0; border-radius: 14px; padding: 16px 10px; margin-bottom: 14px;">
+                <svg id="member-barcode-large" style="max-width: 100%;"></svg>
+                <div id="barcode-modal-name" style="font-weight: 700; font-size: 16px; color: var(--primary-blue); margin-top: 6px;">-</div>
+                <div id="barcode-modal-phone" style="font-size: 13px; color: var(--text-muted);">-</div>
+            </div>
+            <button type="button" class="btn btn-primary btn-block" onclick="closeModal('barcode-modal')">ปิดหน้าต่าง</button>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         Modal ปฏิทินประวัติการเช็กอินรายวัน (Check-in Calendar)
+         ========================================== -->
+    <div id="checkin-calendar-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-calendar-days" style="color: var(--primary-blue);"></i> ปฏิทินประวัติการเช็กอิน</h3>
+                <button type="button" class="close-btn" onclick="closeModal('checkin-calendar-modal')" aria-label="ปิด">&times;</button>
+            </div>
+            <div class="cal-nav-header">
+                <button type="button" class="btn btn-outline-sm" onclick="changeCalendarMonth(-1)"><i class="fa-solid fa-chevron-left"></i></button>
+                <strong id="cal-month-title" style="font-size: 16px; color: var(--primary-blue);">-</strong>
+                <button type="button" class="btn btn-outline-sm" onclick="changeCalendarMonth(1)"><i class="fa-solid fa-chevron-right"></i></button>
+            </div>
+            <div class="cal-weekdays">
+                <div>อา</div><div>จ</div><div>อ</div><div>พ</div><div>พฤ</div><div>ศ</div><div>ส</div>
+            </div>
+            <div id="cal-days-grid" class="cal-days-grid"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 13px; color: var(--text-muted);">
+                <span><i class="fa-solid fa-circle-check" style="color: var(--success-green);"></i> วันที่เช็กอินแล้ว (+1 แต้ม)</span>
+                <strong id="cal-month-summary" style="color: var(--primary-blue);">เช็กอินเดือนนี้ 0 วัน</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         Modal วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin)
+         ========================================== -->
+    <div id="spin-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-content" style="max-width: 410px; text-align: center;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-dharmachakra" style="color: #D97706;"></i> วงล้อลุ้นแต้มร้านมักอาชีวะ</h3>
+                <button type="button" class="close-btn" onclick="closeModal('spin-modal')" aria-label="ปิด">&times;</button>
+            </div>
+            <p id="spin-desc-text" style="font-size: 13.5px; color: var(--text-muted); margin-bottom: 12px;">
+                ใช้ <strong>3 แต้ม</strong> ต่อการหมุน 1 ครั้ง ลุ้นรับโบนัสสูงสุด <strong>15 แต้ม!</strong>
+            </p>
+            <div class="wheel-wrapper">
+                <div class="wheel-pointer">▼</div>
+                <div id="lucky-wheel" class="lucky-wheel">
+                    <div class="wheel-label" style="--rot: 30deg;"><span id="wheel-lbl-0">+1 แต้ม</span></div>
+                    <div class="wheel-label" style="--rot: 90deg;"><span id="wheel-lbl-1">+3 แต้ม</span></div>
+                    <div class="wheel-label" style="--rot: 150deg;"><span id="wheel-lbl-2">+5 แต้ม</span></div>
+                    <div class="wheel-label" style="--rot: 210deg;"><span id="wheel-lbl-3">+2 แต้ม</span></div>
+                    <div class="wheel-label" style="--rot: 270deg;"><span id="wheel-lbl-4">+10 แต้ม</span></div>
+                    <div class="wheel-label" style="--rot: 330deg;"><span id="wheel-lbl-5">+15 แต้ม</span></div>
+                </div>
+            </div>
+            <div id="spin-result-box" style="min-height: 28px; font-weight: 700; font-size: 16px; color: var(--primary-blue); margin: 10px 0;"></div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+                แต้มคงเหลือของคุณ: <strong id="spin-user-points" style="color: var(--primary-blue);">0</strong> แต้ม
+            </p>
+            <button type="button" id="btn-spin-now" class="btn btn-secondary btn-block" onclick="handleSpinWheel()">
+                <i class="fa-solid fa-play"></i> หมุนวงล้อเลย! (ใช้ 3 แต้ม)
+            </button>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         Modal หลักฐานรางวัลจากวงล้อลุ้นโชค
+         ========================================== -->
+    <div id="spin-ticket-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-content" style="max-width: 400px; text-align: center; border-top: 8px solid #D97706;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-dharmachakra" style="color: #D97706;"></i> หลักฐานรางวัลวงล้อ</h3>
+                <button type="button" class="close-btn" onclick="closeModal('spin-ticket-modal')" aria-label="ปิด">&times;</button>
+            </div>
+            <div style="background: #FFFBEB; border: 2px solid #FDE68A; border-radius: 16px; padding: 18px; margin-bottom: 14px;">
+                <div style="width: 64px; height: 64px; background: var(--primary-blue); color: var(--accent-yellow); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 10px;">
+                    <i class="fa-solid fa-trophy"></i>
+                </div>
+                <span style="background: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 99px;">
+                    รางวัลจากวงล้อลุ้นโชค
+                </span>
+                <h4 id="spin-ticket-reward" style="font-size: 22px; color: var(--primary-blue); margin: 10px 0 4px;">-</h4>
+                <p id="spin-ticket-cost" style="font-size: 13px; font-weight: 600; color: #B45309; margin-bottom: 12px;">ใช้แต้มหมุน 0 แต้ม</p>
+                <div style="border-top: 1px dashed #FCD34D; padding-top: 10px; font-size: 13px; color: var(--text-dark);">
+                    <div id="spin-ticket-code" style="font-weight: 700; color: var(--primary-blue); margin-bottom: 2px;">รหัสอ้างอิง: #S0000</div>
+                    <div id="spin-ticket-member" style="color: var(--text-muted); margin-bottom: 2px;">ผู้หมุน: -</div>
+                    <div id="spin-ticket-date" style="font-size: 12px; color: var(--text-muted);">วัน-เวลา: -</div>
+                </div>
+            </div>
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px;">
+                หากสุ่มได้รางวัลสิ่งของ/เครื่องดื่มหน้าร้าน สามารถแสดงหน้าจอนี้ให้พนักงานดูได้ทันที
+            </p>
+            <button type="button" class="btn btn-primary btn-block" onclick="closeModal('spin-ticket-modal')">ตกลง / ปิดหน้าต่าง</button>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         Modal แจ้งเตือนเด้งหน้าจอแอดมินทันทีเมื่อมีลูกค้าแลกของรางวัล
+         ========================================== -->
+    <div id="admin-redeem-alert-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-content" style="max-width: 420px; text-align: center; border-top: 8px solid var(--accent-yellow);">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-bell fa-shake" style="color: #D97706;"></i> มีรายการแลกของรางวัลใหม่!</h3>
+                <button type="button" class="close-btn" onclick="closeModal('admin-redeem-alert-modal')" aria-label="ปิด">&times;</button>
+            </div>
+            <div style="background: #FFFBEB; border: 2px solid #FDE68A; border-radius: 16px; padding: 18px; margin-bottom: 14px;">
+                <img id="admin-alert-reward-img" src="" alt="รูปของรางวัล" style="width: 140px; height: 140px; object-fit: cover; border-radius: 14px; margin: 0 auto 12px; border: 3px solid #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.12);">
+                <span style="background: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 99px;">
+                    ลูกค้ากดแลกของรางวัลสำเร็จ
+                </span>
+                <h4 id="admin-alert-reward-name" style="font-size: 21px; color: var(--primary-blue); margin: 10px 0 4px;">ชื่อของรางวัล</h4>
+                <p id="admin-alert-points" style="font-size: 14px; font-weight: 600; color: #D97706; margin-bottom: 12px;">ใช้แต้มสะสมไป 0 แต้ม</p>
+                <div style="border-top: 1px dashed #FCD34D; padding-top: 10px; font-size: 14px; color: var(--text-dark); text-align: left;">
+                    <div><strong>ผู้แลก:</strong> <span id="admin-alert-member">-</span></div>
+                    <div><strong>เบอร์โทร:</strong> <span id="admin-alert-phone">-</span></div>
+                    <div><strong>รหัสอ้างอิง:</strong> <span id="admin-alert-code" style="color: var(--primary-blue); font-weight: 700;">#0000</span></div>
+                    <div><strong>เวลา:</strong> <span id="admin-alert-time">-</span></div>
+                </div>
+            </div>
+            <button type="button" class="btn btn-primary btn-block" onclick="closeModal('admin-redeem-alert-modal')">รับทราบ / ปิดแจ้งเตือน</button>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         Modal แก้ไขโปรไฟล์ส่วนตัวสมาชิก
+         ========================================== -->
     <div id="profile-modal" class="modal hidden" role="dialog" aria-modal="true">
         <div class="modal-content">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-user-pen"></i> แก้ไขโปรไฟล์และรหัสผ่าน</h3>
+                <h3><i class="fa-solid fa-user-pen"></i> แก้ไขข้อมูลส่วนตัวสมาชิก</h3>
                 <button type="button" class="close-btn" onclick="closeModal('profile-modal')" aria-label="ปิด">&times;</button>
             </div>
-            <form onsubmit="saveMemberProfile(event)">
+            <form id="profile-form" onsubmit="saveMemberProfile(event)">
                 <div class="form-group">
-                    <label for="prof-fullname">ชื่อ-นามสกุล</label>
-                    <input type="text" id="prof-fullname" required placeholder="กรอกชื่อ-นามสกุล">
+                    <label for="prof-fullname">ชื่อ - นามสกุล (ห้ามซ้ำกับผู้อื่น)</label>
+                    <input type="text" id="prof-fullname" required>
                 </div>
                 <div class="form-group">
-                    <label for="prof-phone">เบอร์โทรศัพท์ (ใช้สำหรับเข้าสู่ระบบ)</label>
-                    <input type="tel" id="prof-phone" required maxlength="10" placeholder="เช่น 0812345678">
+                    <label for="prof-phone">เบอร์โทรศัพท์ (10 หลัก)</label>
+                    <input type="tel" id="prof-phone" maxlength="10" pattern="[0-9]{9,10}" inputmode="numeric" required>
                 </div>
                 <hr class="divider">
                 <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-                    <i class="fa-solid fa-lock"></i> เปลี่ยนรหัสผ่าน (เว้นว่างไว้หากไม่ต้องการเปลี่ยน)
+                    <i class="fa-solid fa-key"></i> เปลี่ยนรหัสผ่าน (เว้นว่างไว้หากไม่ต้องการเปลี่ยน)
                 </p>
                 <div class="form-group">
-                    <label for="prof-old-password">รหัสผ่านเดิม</label>
-                    <input type="password" id="prof-old-password" placeholder="กรอกรหัสผ่านปัจจุบันเพื่อยืนยัน">
+                    <label for="prof-old-password">รหัสผ่านเดิม (จำเป็นต้องกรอกหากต้องการเปลี่ยนรหัสผ่าน)</label>
+                    <input type="password" id="prof-old-password" placeholder="กรอกรหัสผ่านปัจจุบันของคุณเพื่อยืนยัน">
                 </div>
                 <div class="form-group">
                     <label for="prof-new-password">รหัสผ่านใหม่</label>
-                    <input type="password" id="prof-new-password" placeholder="ตั้งรหัสผ่านใหม่">
+                    <input type="password" id="prof-new-password" placeholder="กรอกรหัสผ่านใหม่">
                 </div>
                 <div class="form-group">
-                    <label for="prof-confirm-password">ยืนยันรหัสผ่านใหม่</label>
-                    <input type="password" id="prof-confirm-password" placeholder="กรอกรหัสผ่านใหม่อีกครั้ง">
+                    <label for="prof-confirm-password">ยืนยันรหัสผ่านใหม่อีกครั้ง</label>
+                    <input type="password" id="prof-confirm-password" placeholder="พิมพ์รหัสผ่านใหม่อีกครั้งให้ตรงกัน">
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline" onclick="closeModal('profile-modal')">ยกเลิก</button>
-                    <button type="submit" id="btn-save-profile" class="btn btn-primary">บันทึกการเปลี่ยนแปลง</button>
-                </div>
+                <button type="submit" id="btn-save-profile" class="btn btn-primary btn-block">บันทึกการเปลี่ยนแปลง</button>
             </form>
         </div>
     </div>
 
-    <!-- Modal เพิ่ม/แก้ไขโปรโมชั่น -->
+    <!-- ==========================================
+         Modal ลืมรหัสผ่าน (รีเซ็ตและตั้งรหัสผ่านใหม่ทันที)
+         ========================================== -->
+    <div id="forgot-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-key"></i> ตั้งรหัสผ่านใหม่ (ลืมรหัสผ่าน)</h3>
+                <button type="button" class="close-btn" onclick="closeModal('forgot-modal')" aria-label="ปิด">&times;</button>
+            </div>
+            <p style="font-size: 13.5px; color: var(--text-muted); margin-bottom: 16px;">
+                กรุณากรอกเบอร์โทรศัพท์และชื่อ-นามสกุลที่ลงทะเบียนไว้ให้ตรงกัน เพื่อยืนยันตัวตนและตั้งรหัสผ่านใหม่ทันที
+            </p>
+            <form id="forgot-form" onsubmit="handleForgotPassword(event)">
+                <div class="form-group">
+                    <label for="forgot-phone">เบอร์โทรศัพท์ที่ลงทะเบียน</label>
+                    <input type="tel" id="forgot-phone" maxlength="10" pattern="[0-9]{9,10}" inputmode="numeric" placeholder="เช่น 0812345678" required>
+                </div>
+                <div class="form-group">
+                    <label for="forgot-fullname">ชื่อ - นามสกุล ที่ใช้สมัคร</label>
+                    <input type="text" id="forgot-fullname" placeholder="เช่น นายสมชาย ใจดี" required>
+                </div>
+                <hr class="divider">
+                <div class="form-group">
+                    <label for="forgot-new-password">กำหนดรหัสผ่านใหม่</label>
+                    <input type="password" id="forgot-new-password" placeholder="กรอกรหัสผ่านใหม่ที่ต้องการ" required>
+                </div>
+                <div class="form-group">
+                    <label for="forgot-confirm-password">ยืนยันรหัสผ่านใหม่อีกครั้ง</label>
+                    <input type="password" id="forgot-confirm-password" placeholder="พิมพ์รหัสผ่านใหม่อีกครั้งให้ตรงกัน" required>
+                </div>
+                <button type="submit" id="btn-forgot-submit" class="btn btn-primary btn-block">เปลี่ยนรหัสผ่านทันที</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         Modal จัดการแบนเนอร์โปรโมชั่น (Admin)
+         ========================================== -->
     <div id="promo-modal" class="modal hidden" role="dialog" aria-modal="true">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 id="promo-modal-title">เพิ่มแบนเนอร์โปรโมชั่น</h3>
                 <button type="button" class="close-btn" onclick="closeModal('promo-modal')" aria-label="ปิด">&times;</button>
             </div>
-            <form onsubmit="savePromotion(event)">
+            <form id="promo-form" onsubmit="savePromotion(event)">
                 <input type="hidden" id="edit-promo-id">
                 <div class="form-group">
                     <label for="modal-promo-badge">ป้ายกำกับสั้นๆ (Badge)</label>
@@ -836,163 +867,127 @@
                 </div>
                 <div class="form-group">
                     <label for="modal-promo-title">หัวข้อโปรโมชั่น</label>
-                    <input type="text" id="modal-promo-title" placeholder="เช่น ซื้อเครื่องดื่ม 2 แก้ว รับเพิ่ม 2 แต้ม" required>
+                    <input type="text" id="modal-promo-title" placeholder="เช่น ซื้อครบ 100 บาท รับเพิ่มทันที 2 แต้ม!" required>
                 </div>
                 <div class="form-group">
-                    <label for="modal-promo-desc">รายละเอียดเพิ่มเติม</label>
-                    <input type="text" id="modal-promo-desc" placeholder="เงื่อนไขและระยะเวลาโปรโมชั่น" required>
+                    <label for="modal-promo-desc">รายละเอียดโปรโมชั่น</label>
+                    <input type="text" id="modal-promo-desc" placeholder="เช่น เฉพาะวันจันทร์ - ศุกร์นี้เท่านั้น" required>
                 </div>
                 <div class="form-group">
-                    <label>รูปภาพแบนเนอร์ (แนะนำแนวนอน 16:9)</label>
-                    <div class="image-dropzone" id="promo-dropzone">
-                        <i class="fa-solid fa-cloud-arrow-up"></i>
-                        <p>คลิกเลือกไฟล์ หรือลากรูปแบนเนอร์มาวางที่นี่</p>
-                        <span>รองรับ JPG, PNG, WEBP (ย่อขนาดให้อัตโนมัติ)</span>
-                        <input type="file" id="promo-file-input" accept="image/*" style="display:none;">
-                    </div>
+                    <label>รูปภาพแบนเนอร์โปรโมชั่น</label>
                     <input type="hidden" id="modal-promo-image">
-                    <div class="image-preview-box" id="promo-preview-box" style="display:none;">
-                        <img id="promo-preview-img" src="" alt="Preview">
-                        <button type="button" class="btn-remove-img" onclick="setDropzonePreview('promo', '')">
-                            <i class="fa-solid fa-trash"></i> ลบรูป
+                    <div id="promo-dropzone" class="image-dropzone">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <p>ลากไฟล์รูปภาพมาวางที่นี่ หรือ <strong>คลิกเพื่อเลือกไฟล์</strong></p>
+                        <small>รองรับ JPG, PNG, WEBP (ย่อขนาดอัตโนมัติ)</small>
+                        <input type="file" id="promo-file-input" accept="image/*" style="display: none;">
+                    </div>
+                    <div id="promo-preview-box" class="dropzone-preview-box" style="display: none;">
+                        <img id="promo-preview-img" src="" alt="ตัวอย่างแบนเนอร์">
+                        <button type="button" class="btn btn-danger" style="padding: 4px 10px; font-size: 12px; margin-top: 8px;" onclick="setDropzonePreview('promo', '')">
+                            <i class="fa-solid fa-trash"></i> ลบรูปภาพนี้
                         </button>
                     </div>
                 </div>
                 <div class="form-group">
                     <label for="modal-promo-active">สถานะการแสดงผล</label>
                     <select id="modal-promo-active">
-                        <option value="1">เปิดแสดงผลหน้าสมาชิก</option>
-                        <option value="0">ซ่อนแบนเนอร์ชั่วคราว</option>
+                        <option value="1">แสดงบนหน้าสมาชิก</option>
+                        <option value="0">ซ่อนไว้ชั่วคราว</option>
                     </select>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline" onclick="closeModal('promo-modal')">ยกเลิก</button>
-                    <button type="submit" id="btn-save-promo" class="btn btn-primary">บันทึกแบนเนอร์</button>
-                </div>
+                <button type="submit" id="btn-save-promo" class="btn btn-primary btn-block">บันทึกโปรโมชั่น</button>
             </form>
         </div>
     </div>
 
-    <!-- Modal เพิ่ม/แก้ไขสมาชิก -->
+    <!-- ==========================================
+         Modal เพิ่ม/แก้ไขข้อมูลสมาชิก (Admin)
+         ========================================== -->
     <div id="member-modal" class="modal hidden" role="dialog" aria-modal="true">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 id="member-modal-title">เพิ่มสมาชิกใหม่</h3>
                 <button type="button" class="close-btn" onclick="closeModal('member-modal')" aria-label="ปิด">&times;</button>
             </div>
-            <form onsubmit="saveMember(event)">
+            <form id="member-form" onsubmit="saveMember(event)">
                 <input type="hidden" id="edit-member-id">
                 <div class="form-group">
-                    <label for="modal-mem-studentid">เบอร์โทรศัพท์</label>
-                    <input type="tel" id="modal-mem-studentid" required maxlength="10" placeholder="เช่น 0812345678">
+                    <label for="modal-mem-studentid">เบอร์โทรศัพท์ (10 หลัก)</label>
+                    <input type="tel" id="modal-mem-studentid" maxlength="10" pattern="[0-9]{9,10}" inputmode="numeric" placeholder="เช่น 0812345678" required>
                 </div>
                 <div class="form-group">
-                    <label for="modal-mem-fullname">ชื่อ-นามสกุล (ใช้เป็น Username เข้าสู่ระบบ)</label>
-                    <input type="text" id="modal-mem-fullname" required>
+                    <label for="modal-mem-fullname">ชื่อ - นามสกุล (ห้ามซ้ำ)</label>
+                    <input type="text" id="modal-mem-fullname" placeholder="เช่น นางสาวมานี มีใจ" required>
                 </div>
                 <div class="form-group">
                     <label for="modal-mem-password">รหัสผ่าน</label>
-                    <input type="text" id="modal-mem-password" required>
+                    <input type="text" id="modal-mem-password" value="1234" required>
                 </div>
                 <div class="form-group">
-                    <label for="modal-mem-points">แต้มสะสมปัจจุบัน</label>
-                    <input type="number" id="modal-mem-points" min="0" required>
+                    <label for="modal-mem-points">แต้มสะสมคงเหลือ</label>
+                    <input type="number" id="modal-mem-points" min="0" value="0" required>
                 </div>
-                <div class="form-group" id="member-edit-reason-group" style="display:none;">
-                    <label for="modal-mem-reason">เหตุผลที่แก้ไขแต้ม (บันทึกในประวัติตรวจสอบ)</label>
-                    <input type="text" id="modal-mem-reason" placeholder="เช่น ชดเชยแต้มตกหล่น / ปรับยอดแต้ม">
+                <div class="form-group" id="member-edit-reason-group" style="display: none;">
+                    <label for="modal-mem-reason">หมายเหตุ / เหตุผลการปรับแต้ม (บันทึกใน Audit Log)</label>
+                    <input type="text" id="modal-mem-reason" placeholder="เช่น ชดเชยแต้มบิลตกหล่น / แก้ไขยอดผิด">
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline" onclick="closeModal('member-modal')">ยกเลิก</button>
-                    <button type="submit" id="btn-save-member" class="btn btn-primary">บันทึกข้อมูล</button>
-                </div>
+                <button type="submit" id="btn-save-member" class="btn btn-primary btn-block">บันทึกข้อมูลสมาชิก</button>
             </form>
         </div>
     </div>
 
-    <!-- Modal เพิ่ม/แก้ไขของรางวัล -->
+    <!-- ==========================================
+         Modal เพิ่ม/แก้ไขของรางวัล (Admin)
+         ========================================== -->
     <div id="reward-modal" class="modal hidden" role="dialog" aria-modal="true">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="reward-modal-title">เพิ่มของรางวัล</h3>
+                <h3 id="reward-modal-title">เพิ่มของรางวัลใหม่</h3>
                 <button type="button" class="close-btn" onclick="closeModal('reward-modal')" aria-label="ปิด">&times;</button>
             </div>
-            <form onsubmit="saveReward(event)">
+            <form id="reward-form" onsubmit="saveReward(event)">
                 <input type="hidden" id="edit-reward-id">
                 <div class="form-group">
                     <label for="modal-rew-name">ชื่อของรางวัล</label>
-                    <input type="text" id="modal-rew-name" required>
+                    <input type="text" id="modal-rew-name" placeholder="เช่น ชาไทยเย็น 1 แก้วฟรี" required>
                 </div>
                 <div class="form-group">
-                    <label for="modal-rew-desc">รายละเอียด</label>
-                    <input type="text" id="modal-rew-desc" required>
+                    <label for="modal-rew-desc">รายละเอียดของรางวัล</label>
+                    <input type="text" id="modal-rew-desc" placeholder="รายละเอียดเงื่อนไขการแลก" required>
                 </div>
-                <div class="form-group">
-                    <label for="modal-rew-points">แต้มที่ใช้แลก</label>
-                    <input type="number" id="modal-rew-points" min="1" required>
-                </div>
-                <div class="form-group">
-                    <label for="modal-rew-stock">จำนวนคงเหลือ (สต็อก)</label>
-                    <input type="number" id="modal-rew-stock" min="0" required>
+                <div class="grid-2-col">
+                    <div class="form-group">
+                        <label for="modal-rew-points">แต้มที่ใช้แลก</label>
+                        <input type="number" id="modal-rew-points" min="1" value="10" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="modal-rew-stock">จำนวนคงเหลือ (ชิ้น)</label>
+                        <input type="number" id="modal-rew-stock" min="0" value="10" required>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>รูปภาพของรางวัล</label>
-                    <div class="image-dropzone" id="rew-dropzone">
-                        <i class="fa-solid fa-cloud-arrow-up"></i>
-                        <p>คลิกเลือกไฟล์ หรือลากรูปของรางวัลมาวางที่นี่</p>
-                        <span>รองรับ JPG, PNG, WEBP (ย่อขนาดให้อัตโนมัติ)</span>
-                        <input type="file" id="rew-file-input" accept="image/*" style="display:none;">
-                    </div>
                     <input type="hidden" id="modal-rew-image">
-                    <div class="image-preview-box" id="rew-preview-box" style="display:none;">
-                        <img id="rew-preview-img" src="" alt="Preview">
-                        <button type="button" class="btn-remove-img" onclick="setDropzonePreview('rew', '')">
-                            <i class="fa-solid fa-trash"></i> ลบรูป
+                    <div id="rew-dropzone" class="image-dropzone">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <p>ลากไฟล์รูปภาพมาวางที่นี่ หรือ <strong>คลิกเพื่อเลือกไฟล์</strong></p>
+                        <small>รองรับ JPG, PNG, WEBP (ย่อขนาดอัตโนมัติ)</small>
+                        <input type="file" id="rew-file-input" accept="image/*" style="display: none;">
+                    </div>
+                    <div id="rew-preview-box" class="dropzone-preview-box" style="display: none;">
+                        <img id="rew-preview-img" src="" alt="ตัวอย่างของรางวัล">
+                        <button type="button" class="btn btn-danger" style="padding: 4px 10px; font-size: 12px; margin-top: 8px;" onclick="setDropzonePreview('rew', '')">
+                            <i class="fa-solid fa-trash"></i> ลบรูปภาพนี้
                         </button>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline" onclick="closeModal('reward-modal')">ยกเลิก</button>
-                    <button type="submit" id="btn-save-reward" class="btn btn-primary">บันทึกของรางวัล</button>
-                </div>
+                <button type="submit" id="btn-save-reward" class="btn btn-primary btn-block">บันทึกของรางวัล</button>
             </form>
         </div>
     </div>
 
-    <!-- Modal แจ้งเตือนขนาดใหญ่กลางจอฝั่งแอดมิน (เมื่อมีสมาชิกกดแลกของรางวัล) -->
-    <div id="admin-redeem-alert-modal" class="modal hidden" role="dialog" aria-modal="true" style="z-index: 9999;">
-        <div class="modal-content" style="max-width: 460px; text-align: center; border-top: 10px solid #16A34A; box-shadow: 0 20px 50px rgba(0,0,0,0.35);">
-            <div style="background: #DCFCE7; color: #166534; font-size: 14px; font-weight: 700; padding: 6px 16px; border-radius: 99px; display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px;">
-                <i class="fa-solid fa-bell fa-shake"></i> แจ้งเตือน! มีลูกค้าแลกของรางวัล
-            </div>
-            <img id="admin-alert-reward-img" src="" alt="รูปของรางวัล" style="width: 100%; height: 185px; object-fit: cover; border-radius: 14px; margin-bottom: 12px; border: 2px solid #E2E8F0;" onerror="this.src='https://via.placeholder.com/400x200?text=Reward'">
-            <h2 id="admin-alert-reward-name" style="font-size: 24px; color: var(--primary-blue); margin-bottom: 4px;">ชื่อของรางวัล</h2>
-            <p id="admin-alert-points" style="font-size: 16px; font-weight: 700; color: #D97706; margin-bottom: 12px;">ใช้ไป 0 แต้ม</p>
-            <div style="background: #F8FAFC; border: 1.5px solid #CBD5E1; border-radius: 12px; padding: 14px; margin-bottom: 18px; text-align: left; font-size: 15px;">
-                <div style="margin-bottom: 6px;"><strong>ผู้แลก:</strong> <span id="admin-alert-member" style="color: #0F172A; font-weight: 600;">-</span></div>
-                <div style="margin-bottom: 6px;"><strong>เบอร์โทร:</strong> <span id="admin-alert-phone">-</span></div>
-                <div style="margin-bottom: 6px;"><strong>รหัสอ้างอิง:</strong> <span id="admin-alert-code" style="color: var(--primary-blue); font-weight: 700;">#0000</span></div>
-                <div><strong>เวลาทำรายการ:</strong> <span id="admin-alert-time">-</span></div>
-            </div>
-            <button type="button" class="btn btn-primary btn-block" style="font-size: 17px; padding: 14px; background: #16A34A; border-color: #16A34A;" onclick="closeModal('admin-redeem-alert-modal')">
-                <i class="fa-solid fa-check-double"></i> รับทราบ / จ่ายของรางวัลแล้ว
-            </button>
-        </div>
-    </div>
-
-    <!-- ไลบรารีสร้างบาร์โค้ด (JsBarcode) และเชื่อมต่อ Supabase -->
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Custom JavaScript -->
     <script src="app.js"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(() => console.log('PWA Service Worker Registered'))
-                    .catch((err) => console.log('PWA Registration Failed:', err));
-            });
-        }
-    </script>
 </body>
 </html>
-```[cite: 10]

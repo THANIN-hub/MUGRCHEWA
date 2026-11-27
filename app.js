@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + Tier + Check-in Calendar + Custom Lucky Spin + Audit Log)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + Tier + Check-in Calendar + Custom Lucky Spin + Spin History + Audit Log)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -174,6 +174,50 @@ function formatDateTime(isoString) {
 function formatTicketCode(id) {
     const num = Number(id);
     return `#${Number.isFinite(num) ? String(num).padStart(4, '0') : String(id || '0000')}`;
+}
+
+function formatSpinTicketCode(id) {
+    const num = Number(id);
+    return `#S${Number.isFinite(num) ? String(num).padStart(4, '0') : String(id || '0000')}`;
+}
+
+function parseSpinHistoryRecord(item) {
+    const note = String(item?.note || '');
+    const costMatch = note.match(/ใช้\s*(\d+)\s*แต้ม/);
+    const cost = costMatch ? Number(costMatch[1]) : 0;
+
+    let prizeLabel = '-';
+    const quoteMatch = note.match(/ได้รับ\s*"([^"]+)"/);
+    if (quoteMatch) {
+        prizeLabel = quoteMatch[1];
+    } else {
+        const legacyMatch = note.match(/ได้รับ\s*\+?(\d+)\s*แต้ม/);
+        if (legacyMatch) {
+            const pts = Number(legacyMatch[1]);
+            prizeLabel = pts > 0 ? `+${pts} แต้ม` : 'ไม่ได้แต้ม';
+        }
+    }
+
+    const netDelta = Number(item?.points_earned) || 0;
+    const isNoPrize = prizeLabel.includes('ไม่ได้') || prizeLabel.includes('เกลือ') || prizeLabel.includes('เสียใจ');
+
+    return { cost, prizeLabel, netDelta, isNoPrize };
+}
+
+function openSpinTicketModal(historyId) {
+    const item = db.point_history.find(h => String(h.id) === String(historyId));
+    if (!item) return;
+
+    const parsed = parseSpinHistoryRecord(item);
+    const owner = db.users.find(u => String(u.id) === String(item.user_id)) || currentUser;
+
+    document.getElementById('spin-ticket-reward').textContent = parsed.prizeLabel;
+    document.getElementById('spin-ticket-cost').textContent = parsed.cost > 0 ? `ใช้แต้มหมุน ${parsed.cost} แต้ม` : 'หมุนวงล้อฟรี (0 แต้ม)';
+    document.getElementById('spin-ticket-code').textContent = `รหัสอ้างอิง: ${formatSpinTicketCode(item.id)}`;
+    document.getElementById('spin-ticket-member').textContent = owner ? `ผู้หมุน: ${owner.full_name} (${owner.student_id || '-'})` : 'ผู้หมุน: -';
+    document.getElementById('spin-ticket-date').textContent = `วัน-เวลาที่หมุน: ${formatDateTime(item.created_at)}`;
+
+    document.getElementById('spin-ticket-modal')?.classList.remove('hidden');
 }
 
 function getLocalDateKey(isoString) {
@@ -1367,6 +1411,42 @@ function renderMemberHistory() {
             </tr>
         `;
     }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการแลกของรางวัล</td></tr>';
+
+    const spinTbody = document.getElementById('mem-spin-tbody');
+    if (spinTbody) {
+        const mySpins = db.point_history.filter(h =>
+            String(h.user_id) === String(currentUser.id) &&
+            String(h.note || '').startsWith('หมุนวงล้อลุ้นโชค')
+        );
+
+        spinTbody.innerHTML = mySpins.length ? mySpins.map(item => {
+            const parsed = parseSpinHistoryRecord(item);
+            const netDisplay = parsed.netDelta > 0
+                ? `<strong style="color:var(--success-green);">+${parsed.netDelta} แต้ม</strong>`
+                : parsed.netDelta < 0
+                    ? `<strong style="color:var(--danger-red);">${parsed.netDelta} แต้ม</strong>`
+                    : `<span style="color:var(--text-muted);">0 แต้ม</span>`;
+
+            const rewardBadge = parsed.isNoPrize
+                ? `<span class="status-pill status-rejected">${escapeHTML(parsed.prizeLabel)}</span>`
+                : `<span class="status-pill status-approved"><i class="fa-solid fa-gift"></i> ${escapeHTML(parsed.prizeLabel)}</span>`;
+
+            return `
+                <tr>
+                    <td><strong>${formatSpinTicketCode(item.id)}</strong></td>
+                    <td>${formatDateTime(item.created_at)}</td>
+                    <td>${rewardBadge}</td>
+                    <td>${parsed.cost} แต้ม</td>
+                    <td>${netDisplay}</td>
+                    <td>
+                        <button type="button" class="btn btn-outline-sm" onclick="openSpinTicketModal(${Number(item.id)})">
+                            <i class="fa-solid fa-ticket"></i> ดูหลักฐาน
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการหมุนวงล้อ</td></tr>';
+    }
 }
 
 // ==========================================================
@@ -1432,6 +1512,7 @@ function renderAdminDashboard() {
     renderPOSMemberSelect();
     renderRecentPOS();
     renderAdminRedemptions();
+    renderAdminSpinHistory();
     renderAdminPromotions();
     renderAdminMembers();
     renderAdminRewards();
@@ -1748,6 +1829,86 @@ function renderAdminRedemptions() {
             </tr>
         `;
     }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการแลกของรางวัล</td></tr>';
+}
+
+// --- ส่วนแสดงประวัติการหมุนวงล้อและรางวัลวงล้อทั้งหมด (Admin) ---
+function renderAdminSpinHistory() {
+    const tbody = document.getElementById('admin-spins-tbody');
+    const kpiBox = document.getElementById('admin-spin-kpi');
+    if (!tbody) return;
+
+    const allSpins = db.point_history.filter(h => String(h.note || '').startsWith('หมุนวงล้อลุ้นโชค'));
+
+    if (kpiBox) {
+        let totalCost = 0;
+        let totalNetDelta = 0;
+        allSpins.forEach(item => {
+            const p = parseSpinHistoryRecord(item);
+            totalCost += p.cost;
+            totalNetDelta += p.netDelta;
+        });
+        const totalPointsAwarded = totalNetDelta + totalCost;
+
+        kpiBox.innerHTML = `
+            <div class="report-kpi-box">
+                <span>จำนวนการหมุนวงล้อทั้งหมด</span>
+                <strong>${allSpins.length.toLocaleString()} ครั้ง</strong>
+                <small>สะสมตั้งแต่เปิดใช้งาน</small>
+            </div>
+            <div class="report-kpi-box">
+                <span>แต้มที่สมาชิกใช้หมุนรวม</span>
+                <strong style="color: #D97706;">${totalCost.toLocaleString()} แต้ม</strong>
+                <small>หักจากกระเป๋าสมาชิก</small>
+            </div>
+            <div class="report-kpi-box">
+                <span>แต้มรางวัลที่แจกออกรวม</span>
+                <strong style="color: #16A34A;">+${Math.max(0, totalPointsAwarded).toLocaleString()} แต้ม</strong>
+                <small>รวมรางวัลแต้มจากวงล้อ</small>
+            </div>
+        `;
+    }
+
+    const keyword = (document.getElementById('admin-spin-search')?.value || '').toLowerCase().trim();
+    const filteredSpins = allSpins.filter(item => {
+        if (!keyword) return true;
+        const user = db.users.find(u => String(u.id) === String(item.user_id));
+        const parsed = parseSpinHistoryRecord(item);
+        const ticketCode = formatSpinTicketCode(item.id).toLowerCase();
+        return (
+            ticketCode.includes(keyword) ||
+            parsed.prizeLabel.toLowerCase().includes(keyword) ||
+            (user && (
+                String(user.full_name || '').toLowerCase().includes(keyword) ||
+                String(user.student_id || '').toLowerCase().includes(keyword)
+            ))
+        );
+    });
+
+    tbody.innerHTML = filteredSpins.length ? filteredSpins.map(item => {
+        const user = db.users.find(u => String(u.id) === String(item.user_id));
+        const parsed = parseSpinHistoryRecord(item);
+
+        const netDisplay = parsed.netDelta > 0
+            ? `<strong style="color:var(--success-green);">+${parsed.netDelta} แต้ม</strong>`
+            : parsed.netDelta < 0
+                ? `<strong style="color:var(--danger-red);">${parsed.netDelta} แต้ม</strong>`
+                : `<span style="color:var(--text-muted);">0 แต้ม</span>`;
+
+        const rewardBadge = parsed.isNoPrize
+            ? `<span class="status-pill status-rejected">${escapeHTML(parsed.prizeLabel)}</span>`
+            : `<span class="status-pill status-approved"><i class="fa-solid fa-trophy"></i> ${escapeHTML(parsed.prizeLabel)}</span>`;
+
+        return `
+            <tr>
+                <td><strong>${formatSpinTicketCode(item.id)}</strong></td>
+                <td>${formatDateTime(item.created_at)}</td>
+                <td>${user ? `${escapeHTML(user.full_name)} (${escapeHTML(user.student_id || '-')})` : 'ไม่พบสมาชิก'}</td>
+                <td>${rewardBadge}</td>
+                <td>${parsed.cost} แต้ม</td>
+                <td>${netDisplay}</td>
+            </tr>
+        `;
+    }).join('') : '<tr><td colspan="6" style="text-align:center;">ไม่พบประวัติการหมุนวงล้อ</td></tr>';
 }
 
 // ==========================================================
