@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + คูปอง + จำการล็อกอิน)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + แลกรางวัลอัตโนมัติ + จำการล็อกอิน)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -399,32 +399,17 @@ function openTicketModal(redemptionId) {
     const reward = db.rewards.find(rw => rw.id === item.reward_id);
     const code = formatTicketCode(item.id);
 
-    document.getElementById('ticket-code').textContent = code;
-    document.getElementById('ticket-reward-name').textContent = reward ? reward.name : 'ของรางวัล';
-    document.getElementById('ticket-member-info').textContent = `สมาชิก: ${currentUser.full_name} (${currentUser.student_id || '-'})`;
-    document.getElementById('ticket-date').textContent = `วันที่ขอแลก: ${formatDateTime(item.created_at)}`;
-
-    const ticketSvg = document.getElementById('ticket-barcode');
-    if (ticketSvg && typeof JsBarcode !== 'undefined') {
-        JsBarcode(ticketSvg, `RDM-${item.id}`, {
-            format: "CODE128",
-            lineColor: "#1E3A8A",
-            background: "#FFFFFF",
-            width: 2.2,
-            height: 55,
-            displayValue: true,
-            fontSize: 13,
-            font: "Prompt",
-            margin: 4
-        });
+    const imgEl = document.getElementById('ticket-reward-img');
+    if (imgEl) {
+        imgEl.src = (reward && reward.image) ? reward.image : 'https://via.placeholder.com/400x200?text=Reward';
     }
 
-    const statusMap = {
-        pending: '<span class="status-pill status-pending">รออนุมัติ / รอรับของที่เคาน์เตอร์</span>',
-        approved: '<span class="status-pill status-approved">รับของรางวัลเรียบร้อยแล้ว</span>',
-        rejected: '<span class="status-pill status-rejected">ยกเลิกรายการแล้ว (คืนแต้มแล้ว)</span>'
-    };
-    document.getElementById('ticket-status-badge').innerHTML = statusMap[item.status] || '';
+    document.getElementById('ticket-reward-name').textContent = reward ? `แลก "${reward.name}"` : 'แลกของรางวัล';
+    document.getElementById('ticket-points-spent').textContent = `ใช้แต้มสะสมไป ${item.points_spent} แต้ม`;
+    document.getElementById('ticket-code').textContent = `รหัสอ้างอิง: ${code}`;
+    document.getElementById('ticket-member-info').textContent = `ผู้แลก: ${currentUser.full_name} (${currentUser.student_id || '-'})`;
+    document.getElementById('ticket-date').textContent = `วัน-เวลาที่แลก: ${formatDateTime(item.created_at)}`;
+
     document.getElementById('ticket-modal').classList.remove('hidden');
 }
 
@@ -760,48 +745,17 @@ async function redeemReward(rewardId) {
             user_id: latestUser.id,
             reward_id: reward.id,
             points_spent: reward.points_required,
-            status: 'pending'
+            status: 'approved'
         }]).select().single()
     ]);
 
     await syncFromCloud();
     renderMemberDashboard();
-    showToast(`แลก "${reward.name}" สำเร็จ! แสดงคูปองนี้ที่เคาน์เตอร์ร้าน`);
+    showToast(`แลก "${reward.name}" สำเร็จ! บันทึกประวัติเรียบร้อยแล้ว`);
 
     if (insertRes && insertRes.data) {
         openTicketModal(insertRes.data.id);
     }
-}
-
-async function cancelMyRedemption(redemptionId) {
-    await syncFromCloud();
-    const item = db.redemptions.find(r => r.id === redemptionId && r.user_id === currentUser.id);
-    if (!item) return;
-
-    if (item.status !== 'pending') {
-        showToast('ไม่สามารถยกเลิกได้ เนื่องจากรายการนี้ถูกดำเนินการไปแล้ว');
-        renderMemberDashboard();
-        return;
-    }
-
-    const reward = db.rewards.find(r => r.id === item.reward_id);
-    if (!confirm(`ยืนยันการยกเลิกคำขอแลก "${reward ? reward.name : 'ของรางวัล'}" และรับคืน ${item.points_spent} แต้มหรือไม่?`)) {
-        return;
-    }
-
-    const latestUser = db.users.find(u => u.id === currentUser.id);
-
-    await sb.from('redemptions').update({ status: 'rejected' }).eq('id', redemptionId);
-    if (latestUser) {
-        await sb.from('users').update({ points: latestUser.points + item.points_spent }).eq('id', latestUser.id);
-    }
-    if (reward) {
-        await sb.from('rewards').update({ stock: reward.stock + 1 }).eq('id', reward.id);
-    }
-
-    await syncFromCloud();
-    renderMemberDashboard();
-    showToast(`ยกเลิกรายการและคืน ${item.points_spent} แต้มให้เรียบร้อยแล้ว`);
 }
 
 function renderMemberHistory() {
@@ -823,14 +777,10 @@ function renderMemberHistory() {
     redeemTbody.innerHTML = myRedemptions.length ? myRedemptions.map(item => {
         const reward = db.rewards.find(rw => rw.id === item.reward_id);
         const statusMap = {
-            pending: '<span class="status-pill status-pending">รออนุมัติ / รอรับของ</span>',
+            pending: '<span class="status-pill status-approved">แลกสำเร็จแล้ว</span>',
             approved: '<span class="status-pill status-approved">แลกสำเร็จแล้ว</span>',
             rejected: '<span class="status-pill status-rejected">ยกเลิก (คืนแต้มแล้ว)</span>'
         };
-
-        const cancelBtn = item.status === 'pending'
-            ? `<button class="btn btn-danger" onclick="cancelMyRedemption(${item.id})" title="ยกเลิกคำขอและรับแต้มคืน"><i class="fa-solid fa-rotate-left"></i> ยกเลิก</button>`
-            : '';
 
         return `
             <tr>
@@ -838,12 +788,11 @@ function renderMemberHistory() {
                 <td>${formatDateTime(item.created_at)}</td>
                 <td>${reward ? reward.name : 'ของรางวัลที่ถูกลบ'}</td>
                 <td>-${item.points_spent} แต้ม</td>
-                <td>${statusMap[item.status]}</td>
-                <td style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <td>${statusMap[item.status] || statusMap.approved}</td>
+                <td>
                     <button class="btn btn-outline-sm" onclick="openTicketModal(${item.id})">
-                        <i class="fa-solid fa-ticket"></i> คูปอง
+                        <i class="fa-solid fa-image"></i> ดูหลักฐาน
                     </button>
-                    ${cancelBtn}
                 </td>
             </tr>
         `;
@@ -900,13 +849,11 @@ function renderAdminDashboard() {
     const members = db.users.filter(u => u.role === 'member');
     const totalPointsGiven = db.point_history.reduce((sum, h) => sum + Number(h.points_earned), 0);
     const totalSales = db.point_history.reduce((sum, h) => sum + Number(h.amount), 0);
-    const pendingCount = db.redemptions.filter(r => r.status === 'pending').length;
 
     document.getElementById('stat-total-members').textContent = members.length.toLocaleString();
     document.getElementById('stat-total-points').textContent = totalPointsGiven.toLocaleString();
     document.getElementById('stat-total-redemptions').textContent = db.redemptions.length.toLocaleString();
     document.getElementById('stat-total-sales').textContent = totalSales.toLocaleString();
-    document.getElementById('pending-badge').textContent = pendingCount;
 
     document.getElementById('setting-baht-per-point').value = db.settings.baht_per_point;
 
@@ -1069,31 +1016,16 @@ function renderRecentPOS() {
     }).join('');
 }
 
-// --- ส่วนจัดการคำขอแลกของรางวัล ---
+// --- ส่วนแสดงประวัติการแลกของรางวัลอัตโนมัติ ---
 function renderAdminRedemptions() {
     const tbody = document.getElementById('admin-redemptions-tbody');
     tbody.innerHTML = db.redemptions.length ? db.redemptions.map(item => {
         const user = db.users.find(u => u.id === item.user_id);
         const reward = db.rewards.find(r => r.id === item.reward_id);
 
-        let statusBadge = '';
-        let actionBtns = '-';
-
-        if (item.status === 'pending') {
-            statusBadge = '<span class="status-pill status-pending">รออนุมัติ</span>';
-            actionBtns = `
-                <button class="btn btn-success" onclick="updateRedemptionStatus(${item.id}, 'approved')">
-                    <i class="fa-solid fa-check"></i> อนุมัติ
-                </button>
-                <button class="btn btn-danger" onclick="updateRedemptionStatus(${item.id}, 'rejected')">
-                    <i class="fa-solid fa-xmark"></i> ยกเลิก
-                </button>
-            `;
-        } else if (item.status === 'approved') {
-            statusBadge = '<span class="status-pill status-approved">อนุมัติแล้ว</span>';
-        } else {
-            statusBadge = '<span class="status-pill status-rejected">ยกเลิกแล้ว</span>';
-        }
+        const statusBadge = item.status === 'rejected'
+            ? '<span class="status-pill status-rejected">ยกเลิกแล้ว</span>'
+            : '<span class="status-pill status-approved">แลกสำเร็จอัตโนมัติ</span>';
 
         return `
             <tr>
@@ -1103,34 +1035,9 @@ function renderAdminRedemptions() {
                 <td>${reward ? reward.name : 'ไม่พบของรางวัล'}</td>
                 <td>${item.points_spent} แต้ม</td>
                 <td>${statusBadge}</td>
-                <td>${actionBtns}</td>
             </tr>
         `;
-    }).join('') : '<tr><td colspan="7" style="text-align:center;">ยังไม่มีรายการขอแลกของรางวัล</td></tr>';
-}
-
-async function updateRedemptionStatus(redemptionId, newStatus) {
-    const item = db.redemptions.find(r => r.id === redemptionId);
-    if (!item || item.status !== 'pending') return;
-
-    await sb.from('redemptions').update({ status: newStatus }).eq('id', redemptionId);
-
-    if (newStatus === 'rejected') {
-        const user = db.users.find(u => u.id === item.user_id);
-        const reward = db.rewards.find(r => r.id === item.reward_id);
-        if (user) {
-            await sb.from('users').update({ points: user.points + item.points_spent }).eq('id', user.id);
-        }
-        if (reward) {
-            await sb.from('rewards').update({ stock: reward.stock + 1 }).eq('id', reward.id);
-        }
-        showToast('ยกเลิกรายการและคืนแต้มให้สมาชิกเรียบร้อยแล้ว');
-    } else {
-        showToast('อนุมัติการแลกของรางวัลเรียบร้อยแล้ว');
-    }
-
-    await syncFromCloud();
-    renderAdminDashboard();
+    }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการแลกของรางวัล</td></tr>';
 }
 
 // ==========================================================
@@ -1596,8 +1503,12 @@ function startRealtimeSync() {
 
             if (currentUser.role === 'admin') {
                 renderAdminDashboard();
-                if (payload.table === 'redemptions' && payload.eventType === 'INSERT') {
-                    showToast('มีคำขอแลกของรางวัลใหม่เข้ามา!');
+                if (payload.table === 'redemptions' && payload.eventType === 'INSERT' && payload.new) {
+                    const buyer = db.users.find(u => u.id === payload.new.user_id);
+                    const rw = db.rewards.find(r => r.id === payload.new.reward_id);
+                    const buyerName = buyer ? buyer.full_name : 'สมาชิก';
+                    const rwName = rw ? rw.name : 'ของรางวัล';
+                    showToast(`แจ้งเตือน: คุณ ${buyerName} แลก "${rwName}" สำเร็จแล้ว!`);
                 }
             } else {
                 renderMemberDashboard();
