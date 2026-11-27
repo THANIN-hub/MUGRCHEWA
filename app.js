@@ -923,3 +923,38 @@ function exportReportCSV() {
 function closeModal(modalId) {
     document.getElementById(modalId).classList.add('hidden');
 }
+// ==========================================================
+// ระบบซิงก์ข้อมูลอัตโนมัติแบบเรียลไทม์ (Supabase Realtime)
+// ==========================================================
+let realtimeChannel = null;
+
+function startRealtimeSync() {
+    if (realtimeChannel) return;
+
+    realtimeChannel = sb.channel('muk-rcheewa-live')
+        .on('postgres_changes', { event: '*', schema: 'public' }, async (payload) => {
+            if (!currentUser) return;
+
+            const oldPoints = currentUser.points;
+            const ok = await syncFromCloud();
+            if (!ok) return;
+
+            if (currentUser.role === 'admin') {
+                renderAdminDashboard();
+                if (payload.table === 'redemptions' && payload.eventType === 'INSERT') {
+                    showToast('มีคำขอแลกของรางวัลใหม่เข้ามา!');
+                }
+            } else {
+                renderMemberDashboard();
+                const updatedUser = db.users.find(u => u.id === currentUser.id);
+                if (updatedUser && updatedUser.points > oldPoints) {
+                    const diff = updatedUser.points - oldPoints;
+                    showToast(`คุณได้รับเพิ่ม +${diff} แต้ม!`);
+                }
+            }
+        })
+        .subscribe();
+}
+
+// เริ่มทำงานทันทีที่เปิดหน้าเว็บ
+startRealtimeSync();
