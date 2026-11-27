@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบบริหารจัดการแต้มสมาชิกดิจิทัล | ร้านมักอาชีวะ วิทยาลัยอาชีวศึกษามหาสารคาม</title>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- ส่วนแสดงการแจ้งเตือน (Toast Notification) -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- ==========================================
+         หน้าเข้าสู่ระบบและสมัครสมาชิก (Auth View)
+         ========================================== -->
+    <section id="auth-view" class="auth-wrapper">
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="brand-logo">
+                    <i class="fa-solid fa-mug-hot"></i>
+                </div>
+                <h1>ร้านมักอาชีวะ</h1>
+                <p>ระบบสะสมแต้มสมาชิกดิจิทัล<br>วิทยาลัยอาชีวศึกษามหาสารคาม</p>
+            </div>
+
+            <div class="auth-tabs">
+                <button class="tab-btn active" onclick="switchAuthTab('login')">เข้าสู่ระบบ</button>
+                <button class="tab-btn" onclick="switchAuthTab('register')">สมัครสมาชิก</button>
+            </div>
+
+            <!-- ฟอร์มเข้าสู่ระบบ -->
+            <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label>ชื่อผู้ใช้งาน (Username)</label>
+                    <input type="text" id="login-username" required placeholder="กรอกชื่อผู้ใช้งาน">
+                </div>
+                <div class="form-group">
+                    <label>รหัสผ่าน (Password)</label>
+                    <input type="password" id="login-password" required placeholder="กรอกรหัสผ่าน">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">
+                    <i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ
+                </button>
+
+                <div class="quick-login-box">
+                    <p>ทดลองใช้งานด่วน (สำหรับนำเสนอโครงงาน):</p>
+                    <div class="quick-btns">
+                        <button type="button" class="btn btn-outline-sm" onclick="quickLogin('std001', '1234')">
+                            <i class="fa-solid fa-user-graduate"></i> สมาชิก (std001)
+                        </button>
+                        <button type="button" class="btn btn-outline-sm" onclick="quickLogin('admin', '1234')">
+                            <i class="fa-solid fa-user-shield"></i> ผู้ดูแลร้าน (admin)
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            <!-- ฟอร์มสมัครสมาชิก -->
+            <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+                <div class="form-group">
+                    <label>ชื่อ-นามสกุล</label>
+                    <input type="text" id="reg-fullname" required placeholder="เช่น นายสมชาย ใจดี">
+                </div>
+                <div class="form-group">
+                    <label>รหัสนักศึกษา / รหัสบุคลากร</label>
+                    <input type="text" id="reg-studentid" required placeholder="เช่น 66309010001">
+                </div>
+                <div class="form-group">
+                    <label>ชื่อผู้ใช้งาน (Username)</label>
+                    <input type="text" id="reg-username" required placeholder="ตั้งชื่อผู้ใช้งานภาษาอังกฤษ">
+                </div>
+                <div class="form-group">
+                    <label>รหัสผ่าน (Password)</label>
+                    <input type="password" id="reg-password" required placeholder="ตั้งรหัสผ่าน">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">
+                    <i class="fa-solid fa-user-plus"></i> สมัครสมาชิก (รับฟรี 5 แต้ม!)
+                </button>
+            </form>
+        </div>
+    </section>
+
+    <!-- ==========================================
+         ส่วนหลักของระบบ (Main App Layout)
+         ========================================== -->
+    <div id="main-app" class="app-layout hidden">
+        <!-- แถบนำทางด้านบน (Navbar) -->
+        <header class="navbar">
+            <div class="nav-brand">
+                <i class="fa-solid fa-mug-hot"></i>
+                <div>
+                    <span class="brand-title">ร้านมักอาชีวะ</span>
+                    <span class="brand-sub">วิทยาลัยอาชีวศึกษามหาสารคาม</span>
+                </div>
+            </div>
+            <div class="nav-user">
+                <span id="nav-user-role" class="role-badge">สมาชิก</span>
+                <span id="nav-user-name" class="user-name">ชื่อผู้ใช้</span>
+                <button class="btn btn-logout" onclick="handleLogout()">
+                    <i class="fa-solid fa-power-off"></i> ออกจากระบบ
+                </button>
+            </div>
+        </header>
+
+        <!-- ==========================================
+             1. ระบบสมาชิก (Member Dashboard)
+             ========================================== -->
+        <main id="member-dashboard" class="container hidden">
+            <!-- บัตรสมาชิกดิจิทัล -->
+            <div class="member-hero-grid">
+                <div class="digital-card">
+                    <div class="card-top">
+                        <div>
+                            <span class="card-tag">MUK RCHEEWA MEMBER</span>
+                            <h2 id="mem-card-name">นายกิตติพงษ์ รักเรียน</h2>
+                            <p id="mem-card-id">รหัสนักศึกษา: 66309010001</p>
+                        </div>
+                        <div class="qr-mock">
+                            <i class="fa-solid fa-qrcode"></i>
+                        </div>
+                    </div>
+                    <div class="card-bottom">
+                        <span>ร้านมักอาชีวะ วิทยาลัยอาชีวศึกษามหาสารคาม</span>
+                        <span id="mem-card-username">@std001</span>
+                    </div>
+                </div>
+
+                <!-- กล่องแสดงแต้มสะสมสีเหลืองเด่นชัด -->
+                <div class="points-highlight-card">
+                    <div class="points-icon">
+                        <i class="fa-solid fa-coins"></i>
+                    </div>
+                    <div class="points-info">
+                        <span>แต้มสะสมปัจจุบันของคุณ</span>
+                        <div class="points-number"><span id="mem-current-points">0</span> <small>แต้ม</small></div>
+                        <p id="mem-rate-info">ทุกยอดซื้อ 20 บาท รับ 1 แต้ม</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- เมนูย่อยฝั่งสมาชิก -->
+            <div class="sub-nav">
+                <button class="sub-nav-btn active" onclick="switchMemberTab('rewards', this)">
+                    <i class="fa-solid fa-gift"></i> แลกของรางวัล
+                </button>
+                <button class="sub-nav-btn" onclick="switchMemberTab('earn-history', this)">
+                    <i class="fa-solid fa-clock-rotate-left"></i> ประวัติการสะสมแต้ม
+                </button>
+                <button class="sub-nav-btn" onclick="switchMemberTab('redeem-history', this)">
+                    <i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัล
+                </button>
+            </div>
+
+            <!-- แท็บรายการของรางวัล -->
+            <div id="mem-tab-rewards" class="tab-content active">
+                <div class="section-header">
+                    <h3><i class="fa-solid fa-gift"></i> รายการของรางวัล</h3>
+                    <p>เลือกของรางวัลที่ต้องการและกดแลกแต้มได้ทันที</p>
+                </div>
+                <div id="member-rewards-grid" class="rewards-grid"></div>
+            </div>
+
+            <!-- แท็บประวัติการสะสมแต้ม -->
+            <div id="mem-tab-earn-history" class="tab-content">
+                <div class="card-box">
+                    <h3><i class="fa-solid fa-clock-rotate-left"></i> ประวัติการสะสมแต้ม</h3>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>วัน-เวลา</th>
+                                    <th>รายการ / หมายเหตุ</th>
+                                    <th>ยอดซื้อ (บาท)</th>
+                                    <th>แต้มที่ได้รับ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mem-earn-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- แท็บประวัติการแลกของรางวัล -->
+            <div id="mem-tab-redeem-history" class="tab-content">
+                <div class="card-box">
+                    <h3><i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัล</h3>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>วัน-เวลาที่ขอแลก</th>
+                                    <th>ของรางวัล</th>
+                                    <th>แต้มที่ใช้</th>
+                                    <th>สถานะ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mem-redeem-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ==========================================
+             2. ระบบผู้ดูแลร้าน (Admin Dashboard)
+             ========================================== -->
+        <main id="admin-dashboard" class="container hidden">
+            <!-- การ์ดสรุปสถิติภาพรวม -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon blue"><i class="fa-solid fa-users"></i></div>
+                    <div>
+                        <span>สมาชิกทั้งหมด</span>
+                        <h3 id="stat-total-members">0</h3>
+                    </div>
+                </div>
+                <div class="stat-card highlight-yellow">
+                    <div class="stat-icon yellow"><i class="fa-solid fa-coins"></i></div>
+                    <div>
+                        <span>แต้มที่แจกทั้งหมด</span>
+                        <h3 id="stat-total-points">0</h3>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon red"><i class="fa-solid fa-gift"></i></div>
+                    <div>
+                        <span>รายการแลกรางวัล</span>
+                        <h3 id="stat-total-redemptions">0</h3>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon green"><i class="fa-solid fa-baht-sign"></i></div>
+                    <div>
+                        <span>ยอดขายสะสม (บาท)</span>
+                        <h3 id="stat-total-sales">0</h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- เมนูย่อยฝั่งแอดมิน -->
+            <div class="sub-nav">
+                <button class="sub-nav-btn active" onclick="switchAdminTab('pos', this)">
+                    <i class="fa-solid fa-cash-register"></i> บันทึกยอดซื้อ / ให้แต้ม
+                </button>
+                <button class="sub-nav-btn" onclick="switchAdminTab('redemptions', this)">
+                    <i class="fa-solid fa-bell-concierge"></i> คำขอแลกรางวัล <span id="pending-badge" class="badge-count">0</span>
+                </button>
+                <button class="sub-nav-btn" onclick="switchAdminTab('members', this)">
+                    <i class="fa-solid fa-user-gear"></i> จัดการสมาชิก
+                </button>
+                <button class="sub-nav-btn" onclick="switchAdminTab('rewards', this)">
+                    <i class="fa-solid fa-boxes-stacked"></i> จัดการของรางวัล
+                </button>
+                <button class="sub-nav-btn" onclick="switchAdminTab('reports', this)">
+                    <i class="fa-solid fa-chart-pie"></i> รายงานสรุป
+                </button>
+            </div>
+
+            <!-- แท็บ 1: บันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ -->
+            <div id="admin-tab-pos" class="tab-content active">
+                <div class="pos-grid">
+                    <div class="card-box">
+                        <h3><i class="fa-solid fa-cash-register"></i> บันทึกยอดซื้อและให้แต้มสมาชิก</h3>
+                        <form onsubmit="handleRecordPurchase(event)">
+                            <div class="form-group">
+                                <label>เลือกสมาชิก (ค้นหาจากชื่อหรือรหัสนักศึกษา)</label>
+                                <select id="pos-member-select" required></select>
+                            </div>
+                            <div class="form-group">
+                                <label>ยอดซื้อสินค้า (บาท)</label>
+                                <input type="number" id="pos-amount" min="1" step="0.01" required placeholder="0.00" oninput="calculatePreviewPoints()">
+                            </div>
+                            <div class="form-group">
+                                <label>หมายเหตุ (ไม่บังคับ)</label>
+                                <input type="text" id="pos-note" placeholder="เช่น ซื้อเครื่องดื่ม 2 แก้ว">
+                            </div>
+                            <div class="points-preview-box">
+                                <span>แต้มที่จะได้รับอัตโนมัติ:</span>
+                                <strong id="pos-preview-points">0 แต้ม</strong>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-block">
+                                <i class="fa-solid fa-circle-check"></i> บันทึกยอดซื้อและเพิ่มแต้ม
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="card-box">
+                        <h3><i class="fa-solid fa-sliders"></i> ตั้งค่าอัตราการคำนวณแต้ม</h3>
+                        <p class="text-muted">กำหนดจำนวนเงิน (บาท) ต่อการได้รับ 1 แต้ม</p>
+                        <form onsubmit="handleUpdateRate(event)" class="rate-form">
+                            <div class="form-group">
+                                <label>ทุกๆ ยอดซื้อ (บาท)</label>
+                                <input type="number" id="setting-baht-per-point" min="1" required>
+                            </div>
+                            <button type="submit" class="btn btn-secondary">
+                                <i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่า
+                            </button>
+                        </form>
+                        <hr class="divider">
+                        <h4>ประวัติการให้แต้มล่าสุด</h4>
+                        <div class="table-responsive">
+                            <table class="data-table compact">
+                                <thead>
+                                    <tr>
+                                        <th>สมาชิก</th>
+                                        <th>ยอดซื้อ</th>
+                                        <th>แต้มที่ได้</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-recent-pos-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- แท็บ 2: จัดการคำขอแลกของรางวัล -->
+            <div id="admin-tab-redemptions" class="tab-content">
+                <div class="card-box">
+                    <h3><i class="fa-solid fa-bell-concierge"></i> รายการคำขอแลกของรางวัล</h3>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>วัน-เวลา</th>
+                                    <th>ชื่อสมาชิก</th>
+                                    <th>ของรางวัล</th>
+                                    <th>แต้มที่ใช้</th>
+                                    <th>สถานะ</th>
+                                    <th>จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-redemptions-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- แท็บ 3: จัดการข้อมูลสมาชิก -->
+            <div id="admin-tab-members" class="tab-content">
+                <div class="card-box">
+                    <div class="card-header-flex">
+                        <h3><i class="fa-solid fa-user-gear"></i> จัดการข้อมูลสมาชิก</h3>
+                        <div class="action-bar">
+                            <input type="text" id="member-search" placeholder="ค้นหาชื่อ / รหัสนักศึกษา..." oninput="renderAdminMembers()">
+                            <button class="btn btn-primary" onclick="openMemberModal()">
+                                <i class="fa-solid fa-plus"></i> เพิ่มสมาชิก
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>รหัสนักศึกษา</th>
+                                    <th>ชื่อ-นามสกุล</th>
+                                    <th>Username</th>
+                                    <th>แต้มสะสม</th>
+                                    <th>จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-members-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- แท็บ 4: จัดการของรางวัล -->
+            <div id="admin-tab-rewards" class="tab-content">
+                <div class="card-box">
+                    <div class="card-header-flex">
+                        <h3><i class="fa-solid fa-boxes-stacked"></i> จัดการรายการของรางวัล</h3>
+                        <button class="btn btn-primary" onclick="openRewardModal()">
+                            <i class="fa-solid fa-plus"></i> เพิ่มของรางวัลใหม่
+                        </button>
+                    </div>
+                    <div id="admin-rewards-grid" class="rewards-grid"></div>
+                </div>
+            </div>
+
+            <!-- แท็บ 5: รายงานสรุปการใช้งานระบบ -->
+            <div id="admin-tab-reports" class="tab-content">
+                <div class="card-box">
+                    <div class="card-header-flex">
+                        <h3><i class="fa-solid fa-chart-pie"></i> รายงานสรุปการใช้งานระบบ</h3>
+                        <div class="action-bar">
+                            <button class="btn btn-secondary" onclick="exportReportCSV()">
+                                <i class="fa-solid fa-file-csv"></i> ส่งออก CSV
+                            </button>
+                            <button class="btn btn-primary" onclick="window.print()">
+                                <i class="fa-solid fa-print"></i> พิมพ์รายงาน
+                            </button>
+                        </div>
+                    </div>
+                    <div id="report-summary-content" class="report-grid"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal เพิ่ม/แก้ไขสมาชิก -->
+    <div id="member-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="member-modal-title">เพิ่มสมาชิกใหม่</h3>
+                <button class="close-btn" onclick="closeModal('member-modal')">&times;</button>
+            </div>
+            <form onsubmit="saveMember(event)">
+                <input type="hidden" id="edit-member-id">
+                <div class="form-group">
+                    <label>รหัสนักศึกษา</label>
+                    <input type="text" id="modal-mem-studentid" required>
+                </div>
+                <div class="form-group">
+                    <label>ชื่อ-นามสกุล</label>
+                    <input type="text" id="modal-mem-fullname" required>
+                </div>
+                <div class="form-group">
+                    <label>ชื่อผู้ใช้งาน (Username)</label>
+                    <input type="text" id="modal-mem-username" required>
+                </div>
+                <div class="form-group">
+                    <label>รหัสผ่าน</label>
+                    <input type="text" id="modal-mem-password" required>
+                </div>
+                <div class="form-group">
+                    <label>แต้มสะสมปัจจุบัน</label>
+                    <input type="number" id="modal-mem-points" min="0" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeModal('member-modal')">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary">บันทึกข้อมูล</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal เพิ่ม/แก้ไขของรางวัล -->
+    <div id="reward-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="reward-modal-title">เพิ่มของรางวัล</h3>
+                <button class="close-btn" onclick="closeModal('reward-modal')">&times;</button>
+            </div>
+            <form onsubmit="saveReward(event)">
+                <input type="hidden" id="edit-reward-id">
+                <div class="form-group">
+                    <label>ชื่อของรางวัล</label>
+                    <input type="text" id="modal-rew-name" required>
+                </div>
+                <div class="form-group">
+                    <label>รายละเอียด</label>
+                    <input type="text" id="modal-rew-desc" required>
+                </div>
+                <div class="form-group">
+                    <label>แต้มที่ใช้แลก</label>
+                    <input type="number" id="modal-rew-points" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label>จำนวนคงเหลือ (สต็อก)</label>
+                    <input type="number" id="modal-rew-stock" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label>URL รูปภาพของรางวัล</label>
+                    <input type="url" id="modal-rew-image" placeholder="https://..." required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeModal('reward-modal')">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary">บันทึกของรางวัล</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
