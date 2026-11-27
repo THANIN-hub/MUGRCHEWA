@@ -187,9 +187,15 @@ async function handleForgotPassword(e) {
     showToast('เปลี่ยนรหัสผ่านสำเร็จ! กดเข้าสู่ระบบด้วยรหัสผ่านใหม่ได้ทันที');
 }
 
-function applyLoggedInUI(user) {
+function applyLoggedInUI(user, rememberMe = null) {
     currentUser = user;
     sessionStorage.setItem(SESSION_KEY, String(user.id));
+
+    if (rememberMe === true) {
+        localStorage.setItem(SESSION_KEY, String(user.id));
+    } else if (rememberMe === false) {
+        localStorage.removeItem(SESSION_KEY);
+    }
 
     document.getElementById('auth-view').classList.add('hidden');
     document.getElementById('main-app').classList.remove('hidden');
@@ -210,7 +216,7 @@ function applyLoggedInUI(user) {
 }
 
 async function restoreSession() {
-    const savedUserId = sessionStorage.getItem(SESSION_KEY);
+    const savedUserId = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
     if (!savedUserId) return;
 
     const ok = await syncFromCloud();
@@ -221,6 +227,7 @@ async function restoreSession() {
         applyLoggedInUI(user);
     } else {
         sessionStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem(SESSION_KEY);
     }
 }
 
@@ -253,7 +260,8 @@ async function handleLogin(e) {
         return;
     }
 
-    applyLoggedInUI(user);
+    const isRemember = document.getElementById('login-remember')?.checked ?? true;
+    applyLoggedInUI(user, isRemember);
     showToast(`ยินดีต้อนรับคุณ ${user.full_name}`);
 }
 
@@ -336,6 +344,7 @@ async function handleRegister(e) {
 function handleLogout() {
     currentUser = null;
     sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_KEY);
     document.getElementById('main-app').classList.add('hidden');
     document.getElementById('auth-view').classList.remove('hidden');
     document.getElementById('login-form').reset();
