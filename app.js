@@ -1501,16 +1501,41 @@ function startRealtimeSync() {
             const ok = await syncFromCloud();
             if (!ok) return;
 
-            if (currentUser.role === 'admin') {
+           if (currentUser.role === 'admin') {
                 renderAdminDashboard();
                 if (payload.table === 'redemptions' && payload.eventType === 'INSERT' && payload.new) {
                     const buyer = db.users.find(u => u.id === payload.new.user_id);
                     const rw = db.rewards.find(r => r.id === payload.new.reward_id);
-                    const buyerName = buyer ? buyer.full_name : 'สมาชิก';
-                    const rwName = rw ? rw.name : 'ของรางวัล';
-                    showToast(`แจ้งเตือน: คุณ ${buyerName} แลก "${rwName}" สำเร็จแล้ว!`);
+
+                    const imgEl = document.getElementById('admin-alert-reward-img');
+                    if (imgEl) {
+                        imgEl.src = (rw && rw.image) ? rw.image : 'https://via.placeholder.com/400x200?text=Reward';
+                    }
+                    document.getElementById('admin-alert-reward-name').textContent = rw ? rw.name : 'ของรางวัล';
+                    document.getElementById('admin-alert-points').textContent = `ใช้แต้มสะสมไป ${payload.new.points_spent} แต้ม`;
+                    document.getElementById('admin-alert-member').textContent = buyer ? buyer.full_name : 'สมาชิก';
+                    document.getElementById('admin-alert-phone').textContent = buyer ? (buyer.student_id || '-') : '-';
+                    document.getElementById('admin-alert-code').textContent = formatTicketCode(payload.new.id);
+                    document.getElementById('admin-alert-time').textContent = formatDateTime(payload.new.created_at);
+
+                    const alertModal = document.getElementById('admin-redeem-alert-modal');
+                    if (alertModal) alertModal.classList.remove('hidden');
+
+                    try {
+                        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(880, ctx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.15);
+                        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start();
+                        osc.stop(ctx.currentTime + 0.4);
+                    } catch (e) {}
                 }
-            } else {
                 renderMemberDashboard();
                 const updatedUser = db.users.find(u => u.id === currentUser.id);
                 if (updatedUser && updatedUser.points > oldPoints) {
