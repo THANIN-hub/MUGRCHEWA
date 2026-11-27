@@ -273,6 +273,119 @@ function handleLogout() {
 // ==========================================================
 // 1. ระบบสมาชิก (Member Functions)
 // ==========================================================
+function openProfileModal() {
+    if (!currentUser) return;
+    document.getElementById('prof-fullname').value = currentUser.full_name || '';
+    document.getElementById('prof-phone').value = currentUser.student_id || '';
+    document.getElementById('prof-old-password').value = '';
+    document.getElementById('prof-new-password').value = '';
+    document.getElementById('prof-confirm-password').value = '';
+    document.getElementById('profile-modal').classList.remove('hidden');
+}
+
+async function saveMemberProfile(e) {
+    e.preventDefault();
+    if (!currentUser) return;
+
+    const btn = document.getElementById('btn-save-profile');
+    const fullName = document.getElementById('prof-fullname').value.trim().replace(/\s+/g, ' ');
+    const phone = document.getElementById('prof-phone').value.replace(/\D/g, '');
+    const oldPass = document.getElementById('prof-old-password').value.trim();
+    const newPass = document.getElementById('prof-new-password').value.trim();
+    const confirmPass = document.getElementById('prof-confirm-password').value.trim();
+
+    if (!fullName) {
+        showToast('กรุณากรอกชื่อ-นามสกุล');
+        return;
+    }
+
+    if (phone.length < 9 || phone.length > 10) {
+        showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
+        return;
+    }
+
+    let updatedPassword = currentUser.password;
+
+    // ตรวจสอบกรณีผู้ใช้ต้องการเปลี่ยนรหัสผ่าน
+    if (oldPass || newPass || confirmPass) {
+        if (!oldPass) {
+            showToast('กรุณากรอกรหัสผ่านเดิมเพื่อยืนยัน');
+            return;
+        }
+        if (oldPass !== currentUser.password) {
+            showToast('รหัสผ่านเดิมไม่ถูกต้อง');
+            return;
+        }
+        if (!newPass) {
+            showToast('กรุณากรอกรหัสผ่านใหม่');
+            return;
+        }
+        if (newPass !== confirmPass) {
+            showToast('รหัสผ่านใหม่และยืนยันรหัสผ่านไม่ตรงกัน');
+            return;
+        }
+        updatedPassword = newPass;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'กำลังบันทึก...';
+
+    await syncFromCloud();
+
+    // ตรวจสอบชื่อซ้ำกับสมาชิกคนอื่น
+    const isNameDuplicate = db.users.some(u =>
+        u.id !== currentUser.id &&
+        ((u.username && u.username.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()) ||
+         (u.full_name && u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()))
+    );
+
+    if (isNameDuplicate) {
+        showToast('ไม่สามารถบันทึกได้: ชื่อ-นามสกุลนี้มีผู้ใช้งานแล้ว');
+        btn.disabled = false;
+        btn.textContent = 'บันทึกการเปลี่ยนแปลง';
+        return;
+    }
+
+    // ตรวจสอบเบอร์โทรศัพท์ซ้ำกับสมาชิกคนอื่น
+    const isPhoneDuplicate = db.users.some(u =>
+        u.id !== currentUser.id &&
+        (u.student_id && u.student_id.replace(/\D/g, '') === phone)
+    );
+
+    if (isPhoneDuplicate) {
+        showToast('ไม่สามารถบันทึกได้: เบอร์โทรศัพท์นี้ลงทะเบียนในระบบแล้ว');
+        btn.disabled = false;
+        btn.textContent = 'บันทึกการเปลี่ยนแปลง';
+        return;
+    }
+
+    const { error } = await sb.from('users').update({
+        full_name: fullName,
+        username: fullName,
+        student_id: phone,
+        password: updatedPassword
+    }).eq('id', currentUser.id);
+
+    btn.disabled = false;
+    btn.textContent = 'บันทึกการเปลี่ยนแปลง';
+
+    if (error) {
+        showToast('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+        return;
+    }
+
+    await syncFromCloud();
+    const updatedUser = db.users.find(u => u.id === currentUser.id);
+    if (updatedUser) {
+        currentUser = updatedUser;
+        document.getElementById('nav-user-name').textContent = updatedUser.full_name;
+    }
+
+    closeModal('profile-modal');
+    renderMemberDashboard();
+    showToast('บันทึกข้อมูลโปรไฟล์เรียบร้อยแล้ว');
+}
+
 async function switchMemberTab(tabName, btnElement) {
     document.querySelectorAll('#member-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('#member-dashboard .tab-content').forEach(c => c.classList.remove('active'));
@@ -304,7 +417,6 @@ function renderMemberDashboard() {
 
     document.getElementById('mem-card-name').textContent = currentUser.full_name;
     document.getElementById('mem-card-id').textContent = `เบอร์โทรศัพท์: ${currentUser.student_id || '-'}`;
-    document.getElementById('mem-card-username').textContent = '';
     document.getElementById('mem-current-points').textContent = currentUser.points.toLocaleString();
     document.getElementById('mem-rate-info').textContent = `ทุกยอดซื้อ ${db.settings.baht_per_point} บาท รับ 1 แต้ม`;
 
