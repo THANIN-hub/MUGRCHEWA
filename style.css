@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ธีมสี: สีน้ำเงินหลัก (#1E3A8A), พื้นหลังโทนแดง (#B91C1C), แต้มสีเหลือง (#FACC15)
+   ธีมสี: สีน้ำเงินหลัก (#1E3A8A), พื้นหลังโทนเทาเข้ม, แต้มสีเหลือง (#FACC15)
    ========================================================== */
 
 :root {
@@ -227,25 +227,6 @@ body {
     font-size: 12px;
 }
 
-.quick-login-box {
-    margin-top: 20px;
-    padding-top: 16px;
-    border-top: 1px dashed var(--border-color);
-    text-align: center;
-}
-
-.quick-login-box p {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-bottom: 8px;
-}
-
-.quick-btns {
-    display: flex;
-    gap: 8px;
-    justify-content: center;
-}
-
 /* ==========================================
    แถบนำทางด้านบน (Navbar)
    ========================================== */
@@ -266,11 +247,6 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
-}
-
-.nav-brand i {
-    font-size: 26px;
-    color: var(--accent-yellow);
 }
 
 .brand-title {
@@ -370,21 +346,46 @@ body {
     letter-spacing: 1px;
 }
 
+/* ป้ายระดับสมาชิก (Member Tier) */
+.tier-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.tier-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 12px;
+    display: inline-block;
+}
+
+.tier-member {
+    background: #DBEAFE;
+    color: #1E3A8A;
+}
+
+.tier-silver {
+    background: linear-gradient(135deg, #F1F5F9 0%, #CBD5E1 100%);
+    color: #0F172A;
+    border: 1px solid #94A3B8;
+}
+
+.tier-gold {
+    background: linear-gradient(135deg, #FEF08A 0%, #F59E0B 100%);
+    color: #451A03;
+    border: 1px solid #FDE047;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+}
+
 .digital-card h2 {
     margin-top: 10px;
     font-size: 22px;
-}
-
-.qr-mock {
-    background: white;
-    color: var(--primary-blue);
-    width: 56px;
-    height: 56px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 32px;
 }
 
 .card-bottom {
@@ -432,6 +433,118 @@ body {
 
 .points-number small {
     font-size: 16px;
+}
+
+/* ปุ่มเช็กอินรายวัน & วงล้อลุ้นแต้ม */
+.member-fun-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.btn-checkin {
+    background: var(--success-green);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s;
+    box-shadow: 0 3px 8px rgba(22, 163, 74, 0.25);
+}
+
+.btn-checkin:hover:not(:disabled) {
+    background: #15803D;
+    transform: translateY(-1px);
+}
+
+.btn-checkin.checked,
+.btn-checkin:disabled {
+    background: #E2E8F0;
+    color: #64748B;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.btn-lucky-spin {
+    background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+    color: #FACC15;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s;
+    box-shadow: 0 3px 8px rgba(30, 58, 138, 0.25);
+}
+
+.btn-lucky-spin:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.08);
+}
+
+/* ==========================================
+   วงล้อสุ่มแต้ม (Lucky Spin Wheel)
+   ========================================== */
+.wheel-container {
+    position: relative;
+    width: 240px;
+    height: 240px;
+    margin: 14px auto;
+}
+
+.wheel-pointer {
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 26px;
+    color: var(--danger-red);
+    z-index: 10;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.lucky-wheel {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 8px solid var(--primary-blue);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    position: relative;
+    background: conic-gradient(
+        #FACC15 0deg 60deg,
+        #3B82F6 60deg 120deg,
+        #16A34A 120deg 180deg,
+        #F97316 180deg 240deg,
+        #8B5CF6 240deg 300deg,
+        #EF4444 300deg 360deg
+    );
+    transition: transform 3.5s cubic-bezier(0.15, 0.85, 0.25, 1);
+}
+
+.wheel-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin-left: -30px;
+    margin-top: -10px;
+    width: 60px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: #FFFFFF;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
 }
 
 /* ==========================================
@@ -550,7 +663,7 @@ body {
 }
 
 /* ==========================================
-   ส่วนผู้ดูแลร้าน (Admin Stats & POS)
+   ส่วนผู้ดูแลร้าน (Admin Stats, POS & Reports)
    ========================================== */
 .stats-grid {
     display: grid;
@@ -629,6 +742,45 @@ body {
     border: 0;
     border-top: 1px solid var(--border-color);
     margin: 20px 0;
+}
+
+.report-filter-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.report-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+}
+
+.report-kpi-box {
+    background: var(--surface-light);
+    border: 1.5px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.report-kpi-box span {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.report-kpi-box strong {
+    font-size: 26px;
+    color: var(--primary-blue);
+    line-height: 1.2;
+}
+
+.report-kpi-box small {
+    font-size: 12px;
+    color: var(--text-muted);
 }
 
 /* ==========================================
@@ -767,6 +919,7 @@ body {
         text-align: center;
     }
 }
+
 /* ==========================================
    สไลด์แบนเนอร์โปรโมชั่นเลื่อนอัตโนมัติ (Carousel)
    ========================================== */
@@ -891,19 +1044,6 @@ body {
     gap: 4px;
 }
 
-.qr-mock {
-    padding: 4px;
-    overflow: hidden;
-}
-
-.badge-count {
-    background: var(--accent-yellow);
-    color: var(--text-dark);
-    font-size: 11px;
-    font-weight: 700;
-    padding: 1px 7px;
-    border-radius: 12px;
-}
 /* ==========================================
    กล่องอัปโหลดรูปภาพแบบลากวาง (Drag & Drop Upload)
    ========================================== */
@@ -970,6 +1110,7 @@ body {
     font-size: 11px;
     cursor: pointer;
 }
+
 /* ==========================================
    กล่องแสดงบาร์โค้ดบนบัตรสมาชิก (Barcode Card Box)
    ========================================== */

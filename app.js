@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + แลกรางวัลอัตโนมัติ + จำการล็อกอิน)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + แลกรางวัลอัตโนมัติ + Tier + Check-in + Lucky Spin + Audit Log)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -23,6 +23,9 @@ let db = {
 
 let currentUser = null;
 let rewardFilterMode = 'all';
+let reportPeriod = 'today';
+let isSpinning = false;
+let currentWheelRotation = 0;
 
 // โหลดข้อมูลล่าสุดทั้งหมดจาก Supabase
 async function syncFromCloud() {
@@ -99,6 +102,52 @@ function formatDateTime(isoString) {
 
 function formatTicketCode(id) {
     return `#${String(id).padStart(4, '0')}`;
+}
+
+function getLocalDateKey(isoString) {
+    const d = isoString ? new Date(isoString) : new Date();
+    if (isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// คำนวณระดับสมาชิก (Member Tier) จากยอดแต้มสะสมรวม
+function getMemberTierInfo(userId, currentPoints = 0) {
+    const earnedSum = db.point_history
+        .filter(h => h.user_id === userId && Number(h.points_earned) > 0)
+        .reduce((sum, h) => sum + Number(h.points_earned), 0);
+
+    const lifetimePoints = Math.max(earnedSum, Number(currentPoints) || 0);
+
+    if (lifetimePoints >= 150) {
+        return {
+            name: 'GOLD',
+            label: 'ระดับ GOLD',
+            cssClass: 'tier-gold',
+            icon: 'fa-crown',
+            lifetimePoints,
+            nextText: `ระดับสูงสุดแล้ว (สะสมรวม ${lifetimePoints} แต้ม)`
+        };
+    } else if (lifetimePoints >= 50) {
+        const diff = 150 - lifetimePoints;
+        return {
+            name: 'SILVER',
+            label: 'ระดับ SILVER',
+            cssClass: 'tier-silver',
+            icon: 'fa-award',
+            lifetimePoints,
+            nextText: `อีก ${diff} แต้ม ขึ้นระดับ GOLD`
+        };
+    } else {
+        const diff = 50 - lifetimePoints;
+        return {
+            name: 'MEMBER',
+            label: 'ระดับ MEMBER',
+            cssClass: 'tier-member',
+            icon: 'fa-medal',
+            lifetimePoints,
+            nextText: `อีก ${diff} แต้ม ขึ้นระดับ SILVER`
+        };
+    }
 }
 
 // ==========================================================
@@ -352,7 +401,7 @@ function handleLogout() {
 }
 
 // ==========================================================
-// 1. ระบบสมาชิก (Member Functions - Barcode)
+// 1. ระบบสมาชิก (Member Functions: Barcode, Tier, Check-in, Lucky Spin)
 // ==========================================================
 function generateMemberBarcode(codeText) {
     const svgEl = document.getElementById('member-barcode');
@@ -390,6 +439,137 @@ function openMemberBarcodeModal() {
     document.getElementById('barcode-modal-name').textContent = currentUser.full_name;
     document.getElementById('barcode-modal-phone').textContent = currentUser.student_id || '-';
     document.getElementById('barcode-modal').classList.remove('hidden');
+}
+
+// เช็กอินรายวันรับแต้มฟรี (+1 แต้ม)
+function hasCheckedInToday() {
+    if (!currentUser) return false;
+    const todayKey = getLocalDateKey();
+    return db.point_history.some(h =>
+        h.user_id === currentUser.id &&
+        h.note === 'เช็กอินรายวันรับแต้มฟรี' &&
+        getLocalDateKey(h.created_at) === todayKey
+    );
+}
+
+function updateCheckinButtonUI() {
+    const btn = document.getElementById('btn-daily-checkin');
+    if (!btn) return;
+    if (hasCheckedInToday()) {
+        btn.disabled = true;
+        btn.classList.add('checked');
+        btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> เช็กอินวันนี้แล้ว';
+    } else {
+        btn.disabled = false;
+        btn.classList.remove('checked');
+        btn.innerHTML = '<i class="fa-solid fa-calendar-check"></i> เช็กอินวันนี้ (+1 แต้ม)';
+    }
+}
+
+async function handleDailyCheckin() {
+    if (!currentUser) return;
+    const btn = document.getElementById('btn-daily-checkin');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังเช็กอิน...';
+
+    await syncFromCloud();
+    if (hasCheckedInToday()) {
+        updateCheckinButtonUI();
+        showToast('วันนี้คุณเช็กอินรับแต้มไปแล้ว พรุ่งนี้มาใหม่นะครับ!');
+        return;
+    }
+
+    const latestUser = db.users.find(u => u.id === currentUser.id);
+    const newPoints = (latestUser ? latestUser.points : currentUser.points) + 1;
+
+    await Promise.all([
+        sb.from('users').update({ points: newPoints }).eq('id', currentUser.id),
+        sb.from('point_history').insert([{
+            user_id: currentUser.id,
+            amount: 0,
+            points_earned: 1,
+            note: 'เช็กอินรายวันรับแต้มฟรี'
+        }])
+    ]);
+
+    await syncFromCloud();
+    renderMemberDashboard();
+    showToast('เช็กอินสำเร็จ! รับฟรี +1 แต้ม');
+}
+
+// วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin)
+function openLuckySpinModal() {
+    if (!currentUser) return;
+    document.getElementById('spin-user-points').textContent = currentUser.points.toLocaleString();
+    document.getElementById('spin-result-box').textContent = '';
+    document.getElementById('spin-modal').classList.remove('hidden');
+}
+
+async function handleSpinWheel() {
+    if (!currentUser || isSpinning) return;
+    const SPIN_COST = 3;
+
+    await syncFromCloud();
+    const latestUser = db.users.find(u => u.id === currentUser.id);
+    if (!latestUser || latestUser.points < SPIN_COST) {
+        showToast(`แต้มไม่พอหมุนวงล้อ (ต้องใช้ ${SPIN_COST} แต้ม)`);
+        return;
+    }
+
+    isSpinning = true;
+    const btn = document.getElementById('btn-spin-now');
+    const resultBox = document.getElementById('spin-result-box');
+    const wheel = document.getElementById('lucky-wheel');
+
+    btn.disabled = true;
+    resultBox.textContent = 'กำลังหมุนลุ้นรางวัล...';
+
+    // 6 ช่องบนวงล้อ (เรียงตามเข็มนาฬิกา: 30, 90, 150, 210, 270, 330 องศา)
+    const prizes = [1, 3, 5, 2, 10, 15];
+    const weights = [30, 28, 18, 15, 7, 2]; // โอกาสออกแต่ละช่อง (%)
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    let rand = Math.random() * totalWeight;
+    let chosenIdx = 0;
+    for (let i = 0; i < weights.length; i++) {
+        if (rand < weights[i]) {
+            chosenIdx = i;
+            break;
+        }
+        rand -= weights[i];
+    }
+
+    const wonPoints = prizes[chosenIdx];
+    const sliceCenterAngle = chosenIdx * 60 + 30;
+    const targetMod = (360 - sliceCenterAngle) % 360;
+    const currentMod = ((currentWheelRotation % 360) + 360) % 360;
+    const delta = (targetMod - currentMod + 360) % 360;
+
+    currentWheelRotation += 1800 + delta; // หมุน 5 รอบเต็ม + ลงล็อกช่องรางวัล
+    wheel.style.transform = `rotate(${currentWheelRotation}deg)`;
+
+    const netPoints = latestUser.points - SPIN_COST + wonPoints;
+
+    setTimeout(async () => {
+        await Promise.all([
+            sb.from('users').update({ points: netPoints }).eq('id', latestUser.id),
+            sb.from('point_history').insert([{
+                user_id: latestUser.id,
+                amount: 0,
+                points_earned: wonPoints - SPIN_COST,
+                note: `หมุนวงล้อลุ้นโชค (ใช้ ${SPIN_COST} แต้ม, ได้รับ +${wonPoints} แต้ม)`
+            }])
+        ]);
+
+        await syncFromCloud();
+        renderMemberDashboard();
+
+        document.getElementById('spin-user-points').textContent = netPoints.toLocaleString();
+        resultBox.innerHTML = `<i class="fa-solid fa-sparkles"></i> ยินดีด้วย! คุณได้รับ +${wonPoints} แต้ม!`;
+        showToast(`หมุนวงล้อได้ +${wonPoints} แต้ม!`);
+
+        isSpinning = false;
+        btn.disabled = false;
+    }, 3600);
 }
 
 function openTicketModal(redemptionId) {
@@ -572,6 +752,19 @@ function renderMemberDashboard() {
     document.getElementById('mem-current-points').textContent = currentUser.points.toLocaleString();
     document.getElementById('mem-rate-info').textContent = `ทุกยอดซื้อ ${db.settings.baht_per_point} บาท รับ 1 แต้ม`;
 
+    // อัปเดตป้ายระดับสมาชิก (Member Tier)
+    const tier = getMemberTierInfo(currentUser.id, currentUser.points);
+    const tierBadge = document.getElementById('mem-tier-badge');
+    const tierNext = document.getElementById('mem-tier-next-text');
+    if (tierBadge) {
+        tierBadge.className = `tier-badge ${tier.cssClass}`;
+        tierBadge.innerHTML = `<i class="fa-solid ${tier.icon}"></i> ${tier.label}`;
+    }
+    if (tierNext) {
+        tierNext.textContent = tier.nextText;
+    }
+
+    updateCheckinButtonUI();
     generateMemberBarcode(currentUser.student_id || currentUser.username);
     renderMemberPointsGoal();
     renderMemberPromotions();
@@ -762,14 +955,20 @@ function renderMemberHistory() {
     const earnTbody = document.getElementById('mem-earn-tbody');
     const myEarnings = db.point_history.filter(h => h.user_id === currentUser.id);
 
-    earnTbody.innerHTML = myEarnings.length ? myEarnings.map(item => `
-        <tr>
-            <td>${formatDateTime(item.created_at)}</td>
-            <td>${item.note || 'ซื้อสินค้าภายในร้าน'}</td>
-            <td>${Number(item.amount).toLocaleString()} บาท</td>
-            <td><strong style="color:var(--success-green);">+${item.points_earned} แต้ม</strong></td>
-        </tr>
-    `).join('') : '<tr><td colspan="4" style="text-align:center;">ยังไม่มีประวัติการสะสมแต้ม</td></tr>';
+    earnTbody.innerHTML = myEarnings.length ? myEarnings.map(item => {
+        const pts = Number(item.points_earned);
+        const ptsDisplay = pts >= 0
+            ? `<strong style="color:var(--success-green);">+${pts} แต้ม</strong>`
+            : `<strong style="color:var(--danger-red);">${pts} แต้ม</strong>`;
+        return `
+            <tr>
+                <td>${formatDateTime(item.created_at)}</td>
+                <td>${item.note || 'ซื้อสินค้าภายในร้าน'}</td>
+                <td>${Number(item.amount).toLocaleString()} บาท</td>
+                <td>${ptsDisplay}</td>
+            </tr>
+        `;
+    }).join('') : '<tr><td colspan="4" style="text-align:center;">ยังไม่มีประวัติการสะสมแต้ม</td></tr>';
 
     const redeemTbody = document.getElementById('mem-redeem-tbody');
     const myRedemptions = db.redemptions.filter(r => r.user_id === currentUser.id);
@@ -823,9 +1022,8 @@ function clearPOSMember() {
 }
 
 function handlePOSBarcodeKeydown(e) {
-    // เครื่องยิงบาร์โค้ดจะส่งปุ่ม Enter อัตโนมัติหลังยิงรหัสเสร็จ
     if (e.key === 'Enter') {
-        e.preventDefault(); // ป้องกันไม่ให้ฟอร์ม submit ก่อนกรอกยอดเงิน
+        e.preventDefault();
         handlePOSMemberSearch(true);
     }
 }
@@ -847,7 +1045,9 @@ async function switchAdminTab(tabName, btnElement) {
 
 function renderAdminDashboard() {
     const members = db.users.filter(u => u.role === 'member');
-    const totalPointsGiven = db.point_history.reduce((sum, h) => sum + Number(h.points_earned), 0);
+    const totalPointsGiven = db.point_history
+        .filter(h => Number(h.points_earned) > 0)
+        .reduce((sum, h) => sum + Number(h.points_earned), 0);
     const totalSales = db.point_history.reduce((sum, h) => sum + Number(h.amount), 0);
 
     document.getElementById('stat-total-members').textContent = members.length.toLocaleString();
@@ -898,10 +1098,11 @@ function handlePOSMemberSearch(fromScannerEnter = false) {
 
     if (found) {
         hiddenId.value = found.id;
+        const tier = getMemberTierInfo(found.id, found.points);
         statusBox.innerHTML = `
             <div style="background: #DCFCE7; border: 1.5px solid #16A34A; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span style="font-size: 12px; color: #166534; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> พบข้อมูลสมาชิก</span>
+                    <span style="font-size: 12px; color: #166534; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> พบข้อมูลสมาชิก (${tier.name})</span>
                     <div style="font-size: 16px; font-weight: 700; color: #0F172A;">${found.full_name}</div>
                     <small style="color: #334155;">เบอร์โทร: ${found.student_id || '-'}</small>
                 </div>
@@ -912,7 +1113,6 @@ function handlePOSMemberSearch(fromScannerEnter = false) {
             </div>
         `;
 
-        // ถ้ามาจากการยิงบาร์โค้ด หรือพิมพ์เบอร์ครบ 10 หลักตรงเป๊ะ ให้เด้งไปช่องกรอกยอดซื้อทันที
         if (fromScannerEnter || (cleanDigits.length === 10 && found.student_id === cleanDigits)) {
             searchInput.value = `${found.student_id || found.username} | ${found.full_name}`;
             const amountInput = document.getElementById('pos-amount');
@@ -986,7 +1186,6 @@ async function handleRecordPurchase(e) {
     renderAdminDashboard();
     showToast(`บันทึกยอดซื้อ ${amount} บาท ให้คุณ ${member.full_name} (+${pointsEarned} แต้ม)`);
 
-    // โฟกัสกลับไปที่ช่องยิงบาร์โค้ดทันที เพื่อรอรับลูกค้ารายถัดไป
     focusPOSBarcodeInput();
 }
 
@@ -1003,7 +1202,7 @@ async function handleUpdateRate(e) {
 
 function renderRecentPOS() {
     const tbody = document.getElementById('admin-recent-pos-tbody');
-    const recent = db.point_history.slice(0, 5);
+    const recent = db.point_history.filter(h => Number(h.amount) > 0).slice(0, 5);
     tbody.innerHTML = recent.map(item => {
         const user = db.users.find(u => u.id === item.user_id);
         return `
@@ -1202,7 +1401,7 @@ async function deletePromotion(promoId) {
     showToast('ลบแบนเนอร์โปรโมชั่นเรียบร้อยแล้ว');
 }
 
-// --- ส่วนจัดการสมาชิก (CRUD) ---
+// --- ส่วนจัดการสมาชิก (CRUD + Audit Log บันทึกประวัติแก้แต้ม) ---
 function renderAdminMembers() {
     const keyword = document.getElementById('member-search').value.toLowerCase().trim();
     const tbody = document.getElementById('admin-members-tbody');
@@ -1214,26 +1413,32 @@ function renderAdminMembers() {
          u.username.toLowerCase().includes(keyword))
     );
 
-    tbody.innerHTML = members.length ? members.map(m => `
-        <tr>
-            <td>${m.student_id || '-'}</td>
-            <td>${m.full_name}</td>
-            <td><strong>${m.points.toLocaleString()}</strong> แต้ม</td>
-            <td>
-                <button class="btn btn-outline-sm" onclick="openMemberModal(${m.id})">
-                    <i class="fa-solid fa-pen"></i> แก้ไข
-                </button>
-                <button class="btn btn-danger" onclick="deleteMember(${m.id})">
-                    <i class="fa-solid fa-trash"></i> ลบ
-                </button>
-            </td>
-        </tr>
-    `).join('') : '<tr><td colspan="4" style="text-align:center;">ไม่พบข้อมูลสมาชิก</td></tr>';
+    tbody.innerHTML = members.length ? members.map(m => {
+        const tier = getMemberTierInfo(m.id, m.points);
+        return `
+            <tr>
+                <td>${m.student_id || '-'}</td>
+                <td>${m.full_name}</td>
+                <td><span class="tier-pill ${tier.cssClass}">${tier.name}</span></td>
+                <td><strong>${m.points.toLocaleString()}</strong> แต้ม</td>
+                <td>
+                    <button class="btn btn-outline-sm" onclick="openMemberModal(${m.id})">
+                        <i class="fa-solid fa-pen"></i> แก้ไข
+                    </button>
+                    <button class="btn btn-danger" onclick="deleteMember(${m.id})">
+                        <i class="fa-solid fa-trash"></i> ลบ
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('') : '<tr><td colspan="5" style="text-align:center;">ไม่พบข้อมูลสมาชิก</td></tr>';
 }
 
 function openMemberModal(memberId = null) {
     const modal = document.getElementById('member-modal');
     const title = document.getElementById('member-modal-title');
+    const reasonGroup = document.getElementById('member-edit-reason-group');
+    const reasonInput = document.getElementById('modal-mem-reason');
 
     if (memberId) {
         const m = db.users.find(u => u.id === memberId);
@@ -1243,6 +1448,8 @@ function openMemberModal(memberId = null) {
         document.getElementById('modal-mem-fullname').value = m.full_name;
         document.getElementById('modal-mem-password').value = m.password;
         document.getElementById('modal-mem-points').value = m.points;
+        if (reasonGroup) reasonGroup.style.display = 'block';
+        if (reasonInput) reasonInput.value = '';
     } else {
         title.textContent = 'เพิ่มสมาชิกใหม่';
         document.getElementById('edit-member-id').value = '';
@@ -1250,6 +1457,7 @@ function openMemberModal(memberId = null) {
         document.getElementById('modal-mem-fullname').value = '';
         document.getElementById('modal-mem-password').value = '1234';
         document.getElementById('modal-mem-points').value = 0;
+        if (reasonGroup) reasonGroup.style.display = 'none';
     }
     modal.classList.remove('hidden');
 }
@@ -1262,6 +1470,7 @@ async function saveMember(e) {
     const username = fullName;
     const password = document.getElementById('modal-mem-password').value.trim();
     const points = parseInt(document.getElementById('modal-mem-points').value) || 0;
+    const reason = (document.getElementById('modal-mem-reason')?.value || '').trim();
 
     if (phone.length < 9 || phone.length > 10) {
         showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
@@ -1293,6 +1502,10 @@ async function saveMember(e) {
     }
 
     if (currentId) {
+        const oldMember = db.users.find(u => u.id === currentId);
+        const oldPoints = oldMember ? Number(oldMember.points) : 0;
+        const pointDiff = points - oldPoints;
+
         const { error } = await sb.from('users').update({
             student_id: phone,
             full_name: fullName,
@@ -1300,24 +1513,48 @@ async function saveMember(e) {
             password,
             points
         }).eq('id', currentId);
+
         if (error) {
             showToast('เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
             return;
         }
+
+        // บันทึก Audit Log ลงตาราง point_history หากมีการเปลี่ยนแปลงยอดแต้ม
+        if (pointDiff !== 0) {
+            const sign = pointDiff > 0 ? `+${pointDiff}` : `${pointDiff}`;
+            await sb.from('point_history').insert([{
+                user_id: currentId,
+                amount: 0,
+                points_earned: pointDiff,
+                note: `[แอดมินปรับแต้ม ${sign} แต้ม (${oldPoints}→${points})] ${reason || 'แก้ไขผ่านหน้าจัดการสมาชิก'}`
+            }]);
+        }
+
         showToast('แก้ไขข้อมูลสมาชิกเรียบร้อยแล้ว');
     } else {
-        const { error } = await sb.from('users').insert([{
+        const { data: inserted, error } = await sb.from('users').insert([{
             student_id: phone,
             full_name: fullName,
             username,
             password,
             role: 'member',
             points
-        }]);
+        }]).select().single();
+
         if (error) {
             showToast('เกิดข้อผิดพลาดในการเพิ่มสมาชิก');
             return;
         }
+
+        if (inserted && points > 0) {
+            await sb.from('point_history').insert([{
+                user_id: inserted.id,
+                amount: 0,
+                points_earned: points,
+                note: `[แอดมินปรับแต้ม +${points} แต้ม] เพิ่มสมาชิกใหม่พร้อมแต้มเริ่มต้น`
+            }]);
+        }
+
         showToast('เพิ่มสมาชิกใหม่เรียบร้อยแล้ว');
     }
 
@@ -1432,43 +1669,149 @@ async function deleteReward(rewardId) {
     showToast('ลบของรางวัลเรียบร้อยแล้ว');
 }
 
-// --- ส่วนรายงานสรุปการใช้งานระบบ & ส่งออก CSV ---
+// --- ส่วนรายงานสรุปยอดขายรายวัน/รายเดือน & Audit Log ---
+function setReportPeriod(period) {
+    reportPeriod = period;
+    ['today', 'week', 'month', 'all'].forEach(p => {
+        const btn = document.getElementById(`rep-filter-${p}`);
+        if (btn) {
+            btn.className = p === period ? 'btn btn-primary' : 'btn btn-outline';
+        }
+    });
+    renderAdminReports();
+}
+
+function isInSelectedPeriod(isoString) {
+    if (reportPeriod === 'all') return true;
+    if (!isoString) return false;
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return false;
+
+    const now = new Date();
+    if (reportPeriod === 'today') {
+        return getLocalDateKey(isoString) === getLocalDateKey();
+    } else if (reportPeriod === 'week') {
+        const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+        return d >= sevenDaysAgo;
+    } else if (reportPeriod === 'month') {
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }
+    return true;
+}
+
 function renderAdminReports() {
     const container = document.getElementById('report-summary-content');
+    const periodNames = {
+        today: 'วันนี้',
+        week: '7 วันล่าสุด',
+        month: 'เดือนนี้',
+        all: 'ทั้งหมด'
+    };
+
+    const filteredHistory = db.point_history.filter(h => isInSelectedPeriod(h.created_at));
+    const filteredRedemptions = db.redemptions.filter(r => isInSelectedPeriod(r.created_at));
+
+    const periodSales = filteredHistory.reduce((sum, h) => sum + Number(h.amount), 0);
+    const periodOrders = filteredHistory.filter(h => Number(h.amount) > 0).length;
+    const periodPointsGiven = filteredHistory
+        .filter(h => Number(h.points_earned) > 0)
+        .reduce((sum, h) => sum + Number(h.points_earned), 0);
+    const periodRedeemedCount = filteredRedemptions.length;
+
     const members = db.users.filter(u => u.role === 'member');
     const topMembers = [...members].sort((a, b) => b.points - a.points).slice(0, 5);
 
+    const auditLogs = db.point_history
+        .filter(h => h.note && h.note.startsWith('[แอดมินปรับแต้ม'))
+        .slice(0, 15);
+
     container.innerHTML = `
-        <div style="margin-top:16px;">
-            <h4 style="color:var(--primary-blue); margin-bottom:10px;">5 อันดับสมาชิกที่มีแต้มสะสมสูงสุด</h4>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>อันดับ</th>
-                        <th>เบอร์โทรศัพท์</th>
-                        <th>ชื่อ-นามสกุล</th>
-                        <th>แต้มสะสมปัจจุบัน</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${topMembers.map((m, idx) => `
+        <div class="report-kpi-grid">
+            <div class="report-kpi-box">
+                <span>ยอดขาย (${periodNames[reportPeriod]})</span>
+                <strong>${periodSales.toLocaleString()} ฿</strong>
+                <small>${periodOrders} บิลขาย</small>
+            </div>
+            <div class="report-kpi-box">
+                <span>แต้มที่แจก (${periodNames[reportPeriod]})</span>
+                <strong style="color: #D97706;">+${periodPointsGiven.toLocaleString()} แต้ม</strong>
+                <small>รวมทุกช่องทาง</small>
+            </div>
+            <div class="report-kpi-box">
+                <span>แลกของรางวัล (${periodNames[reportPeriod]})</span>
+                <strong style="color: #16A34A;">${periodRedeemedCount.toLocaleString()} ครั้ง</strong>
+                <small>รายการแลกสำเร็จ</small>
+            </div>
+        </div>
+
+        <div style="margin-top: 22px;">
+            <h4 style="color:var(--primary-blue); margin-bottom:10px;"><i class="fa-solid fa-trophy"></i> 5 อันดับสมาชิกที่มีแต้มสะสมสูงสุด</h4>
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
                         <tr>
-                            <td>#${idx + 1}</td>
-                            <td>${m.student_id || '-'}</td>
-                            <td>${m.full_name}</td>
-                            <td><strong>${m.points.toLocaleString()} แต้ม</strong></td>
+                            <th>อันดับ</th>
+                            <th>เบอร์โทรศัพท์</th>
+                            <th>ชื่อ-นามสกุล</th>
+                            <th>ระดับ</th>
+                            <th>แต้มสะสมปัจจุบัน</th>
                         </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        ${topMembers.map((m, idx) => {
+                            const tier = getMemberTierInfo(m.id, m.points);
+                            return `
+                                <tr>
+                                    <td>#${idx + 1}</td>
+                                    <td>${m.student_id || '-'}</td>
+                                    <td>${m.full_name}</td>
+                                    <td><span class="tier-pill ${tier.cssClass}">${tier.name}</span></td>
+                                    <td><strong>${m.points.toLocaleString()} แต้ม</strong></td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div style="margin-top: 26px;">
+            <h4 style="color:var(--primary-blue); margin-bottom:10px;"><i class="fa-solid fa-shield-halved"></i> ประวัติการแก้ไขแต้มด้วยมือ (Audit Log)</h4>
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>วัน-เวลา</th>
+                            <th>สมาชิก</th>
+                            <th>จำนวนที่ปรับ</th>
+                            <th>รายละเอียด / เหตุผล</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${auditLogs.length ? auditLogs.map(log => {
+                            const user = db.users.find(u => u.id === log.user_id);
+                            const pts = Number(log.points_earned);
+                            return `
+                                <tr>
+                                    <td>${formatDateTime(log.created_at)}</td>
+                                    <td>${user ? `${user.full_name} (${user.student_id || '-'})` : 'ไม่พบสมาชิก'}</td>
+                                    <td><strong style="color: ${pts >= 0 ? 'var(--success-green)' : 'var(--danger-red)'};">${pts >= 0 ? '+' + pts : pts} แต้ม</strong></td>
+                                    <td>${log.note}</td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="4" style="text-align:center; color: var(--text-muted);">ยังไม่มีประวัติการแก้ไขแต้มด้วยมือ</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
         </div>
     `;
 }
 
 function exportReportCSV() {
-    let csv = '\uFEFFเบอร์โทรศัพท์,ชื่อ-นามสกุล,แต้มสะสมปัจจุบัน\n';
+    let csv = '\uFEFFเบอร์โทรศัพท์,ชื่อ-นามสกุล,ระดับสมาชิก,แต้มสะสมปัจจุบัน\n';
     db.users.filter(u => u.role === 'member').forEach(m => {
-        csv += `"${m.student_id || '-'}","${m.full_name}",${m.points}\n`;
+        const tier = getMemberTierInfo(m.id, m.points);
+        csv += `"${m.student_id || '-'}","${m.full_name}","${tier.name}",${m.points}\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1501,7 +1844,7 @@ function startRealtimeSync() {
             const ok = await syncFromCloud();
             if (!ok) return;
 
-           if (currentUser.role === 'admin') {
+            if (currentUser.role === 'admin') {
                 renderAdminDashboard();
                 if (payload.table === 'redemptions' && payload.eventType === 'INSERT' && payload.new) {
                     const buyer = db.users.find(u => u.id === payload.new.user_id);
@@ -1536,6 +1879,7 @@ function startRealtimeSync() {
                         osc.stop(ctx.currentTime + 0.4);
                     } catch (e) {}
                 }
+            } else {
                 renderMemberDashboard();
                 const updatedUser = db.users.find(u => u.id === currentUser.id);
                 if (updatedUser && updatedUser.points > oldPoints) {

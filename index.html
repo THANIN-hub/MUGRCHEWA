@@ -115,13 +115,18 @@
             <!-- แบนเนอร์โปรโมชั่น -->
             <div id="member-promo-section" class="promo-carousel-wrapper"></div>
 
-            <!-- บัตรสมาชิกดิจิทัล (แสดงบาร์โค้ดสำหรับเครื่องยิง) -->
+            <!-- บัตรสมาชิกดิจิทัล (แสดงระดับสมาชิก + บาร์โค้ดสำหรับเครื่องยิง) -->
             <div class="member-hero-grid">
-                <div class="digital-card">
+                <div class="digital-card" id="member-digital-card">
                     <div class="card-top" style="flex-direction: column; gap: 12px;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%; gap: 8px; flex-wrap: wrap;">
                             <div>
-                                <span class="card-tag">MUK RCHEEWA MEMBER</span>
+                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <span class="card-tag">MUK RCHEEWA MEMBER</span>
+                                    <span id="mem-tier-badge" class="tier-badge tier-member">
+                                        <i class="fa-solid fa-medal"></i> MEMBER
+                                    </span>
+                                </div>
                                 <h2 id="mem-card-name">ชื่อสมาชิก</h2>
                                 <p id="mem-card-id">เบอร์โทรศัพท์: -</p>
                             </div>
@@ -136,12 +141,15 @@
                             <span class="barcode-tap-hint"><i class="fa-solid fa-expand"></i> แตะขยายบาร์โค้ดให้พนักงานยิง</span>
                         </div>
                     </div>
-                    <div class="card-bottom" style="margin-top: 14px;">
-                        <span>ร้านมักอาชีวะ วิทยาลัยอาชีวศึกษามหาสารคาม</span>
+                    <div class="card-bottom" style="margin-top: 14px; flex-direction: column; gap: 4px;">
+                        <div style="display: flex; justify-content: space-between; width: 100%;">
+                            <span>ร้านมักอาชีวะ วิทยาลัยอาชีวศึกษามหาสารคาม</span>
+                            <span id="mem-tier-next-text" style="font-weight: 600;">สะสมรวม 0 แต้ม</span>
+                        </div>
                     </div>
                 </div>
 
-                <!-- กล่องแสดงแต้มสะสมสีเหลืองเด่นชัด + แถบเป้าหมาย -->
+                <!-- กล่องแสดงแต้มสะสมสีเหลืองเด่นชัด + แถบเป้าหมาย + กิจกรรมรายวัน -->
                 <div class="points-highlight-card" style="flex-direction: column; align-items: stretch; justify-content: center; gap: 14px;">
                     <div style="display: flex; align-items: center; gap: 18px;">
                         <div class="points-icon">
@@ -161,6 +169,15 @@
                         <div style="width: 100%; height: 8px; background: rgba(30, 58, 138, 0.15); border-radius: 99px; overflow: hidden;">
                             <div id="mem-goal-bar" style="width: 0%; height: 100%; background: var(--primary-blue); border-radius: 99px; transition: width 0.4s ease;"></div>
                         </div>
+                    </div>
+                    <!-- ปุ่มกิจกรรมรายวัน (เช็กอินรับแต้มฟรี + วงล้อสุ่มแต้ม) -->
+                    <div class="member-fun-actions">
+                        <button type="button" id="btn-daily-checkin" class="btn-checkin" onclick="handleDailyCheckin()">
+                            <i class="fa-solid fa-calendar-check"></i> เช็กอินวันนี้ (+1 แต้ม)
+                        </button>
+                        <button type="button" class="btn-lucky-spin" onclick="openLuckySpinModal()">
+                            <i class="fa-solid fa-dharmachakra fa-spin" style="--fa-animation-duration: 8s;"></i> วงล้อลุ้นแต้ม
+                        </button>
                     </div>
                 </div>
             </div>
@@ -290,7 +307,7 @@
                     <i class="fa-solid fa-boxes-stacked"></i> จัดการของรางวัล
                 </button>
                 <button class="sub-nav-btn" onclick="switchAdminTab('reports', this)">
-                    <i class="fa-solid fa-chart-pie"></i> รายงานสรุป
+                    <i class="fa-solid fa-chart-pie"></i> รายงานสรุป & ประวัติแก้แต้ม
                 </button>
             </div>
 
@@ -425,6 +442,7 @@
                                 <tr>
                                     <th>เบอร์โทรศัพท์</th>
                                     <th>ชื่อ-นามสกุล (Username)</th>
+                                    <th>ระดับ</th>
                                     <th>แต้มสะสม</th>
                                     <th>จัดการ</th>
                                 </tr>
@@ -448,11 +466,11 @@
                 </div>
             </div>
 
-            <!-- แท็บ 6: รายงานสรุปการใช้งานระบบ -->
+            <!-- แท็บ 6: รายงานสรุปยอดขายรายวัน/รายเดือน & Audit Log -->
             <div id="admin-tab-reports" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
-                        <h3><i class="fa-solid fa-chart-pie"></i> รายงานสรุปการใช้งานระบบ</h3>
+                        <h3><i class="fa-solid fa-chart-pie"></i> รายงานสรุปยอดขายและแต้มสะสม</h3>
                         <div class="action-bar">
                             <button class="btn btn-secondary" onclick="exportReportCSV()">
                                 <i class="fa-solid fa-file-csv"></i> ส่งออก CSV
@@ -462,10 +480,53 @@
                             </button>
                         </div>
                     </div>
+
+                    <!-- ปุ่มกรองช่วงเวลารายงาน -->
+                    <div class="report-filter-bar">
+                        <button type="button" id="rep-filter-today" class="btn btn-primary" onclick="setReportPeriod('today')">วันนี้</button>
+                        <button type="button" id="rep-filter-week" class="btn btn-outline" onclick="setReportPeriod('week')">7 วันล่าสุด</button>
+                        <button type="button" id="rep-filter-month" class="btn btn-outline" onclick="setReportPeriod('month')">เดือนนี้</button>
+                        <button type="button" id="rep-filter-all" class="btn btn-outline" onclick="setReportPeriod('all')">ทั้งหมด</button>
+                    </div>
+
                     <div id="report-summary-content" class="report-grid"></div>
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Modal วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin) -->
+    <div id="spin-modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 420px; text-align: center;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-dharmachakra" style="color: #D97706;"></i> วงล้อลุ้นแต้มมหาสนุก</h3>
+                <button class="close-btn" onclick="closeModal('spin-modal')">&times;</button>
+            </div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+                ใช้ <strong>3 แต้ม</strong> ต่อการหมุน 1 ครั้ง ลุ้นรับโบนัสสูงสุด <strong>15 แต้ม!</strong>
+            </p>
+            <div style="font-size: 14px; font-weight: 600; color: var(--primary-blue); margin-bottom: 14px;">
+                แต้มคงเหลือของคุณ: <span id="spin-user-points" style="font-size: 18px; color: #D97706;">0</span> แต้ม
+            </div>
+
+            <div class="wheel-container">
+                <div class="wheel-pointer">▼</div>
+                <div id="lucky-wheel" class="lucky-wheel">
+                    <div class="wheel-label" style="transform: rotate(30deg) translateY(-92px);">+1 แต้ม</div>
+                    <div class="wheel-label" style="transform: rotate(90deg) translateY(-92px);">+3 แต้ม</div>
+                    <div class="wheel-label" style="transform: rotate(150deg) translateY(-92px);">+5 แต้ม</div>
+                    <div class="wheel-label" style="transform: rotate(210deg) translateY(-92px);">+2 แต้ม</div>
+                    <div class="wheel-label" style="transform: rotate(270deg) translateY(-92px);">+10 แต้ม</div>
+                    <div class="wheel-label" style="transform: rotate(330deg) translateY(-92px);">+15 แต้ม</div>
+                </div>
+            </div>
+
+            <div id="spin-result-box" style="min-height: 28px; margin: 12px 0; font-weight: 700; font-size: 16px; color: var(--success-green);"></div>
+
+            <button type="button" id="btn-spin-now" class="btn btn-secondary btn-block" style="font-size: 16px; padding: 12px;" onclick="handleSpinWheel()">
+                <i class="fa-solid fa-play"></i> หมุนวงล้อเลย! (ใช้ 3 แต้ม)
+            </button>
+        </div>
     </div>
 
     <!-- Modal ลืมรหัสผ่าน (รีเซ็ตรหัสผ่านด้วยตนเอง) -->
@@ -664,6 +725,10 @@
                     <label>แต้มสะสมปัจจุบัน</label>
                     <input type="number" id="modal-mem-points" min="0" required>
                 </div>
+                <div class="form-group" id="member-edit-reason-group" style="display:none;">
+                    <label>เหตุผลที่แก้ไขแต้ม (บันทึกในประวัติตรวจสอบ)</label>
+                    <input type="text" id="modal-mem-reason" placeholder="เช่น ชดเชยแต้มตกหล่น / ปรับยอดแต้ม">
+                </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline" onclick="closeModal('member-modal')">ยกเลิก</button>
                     <button type="submit" class="btn btn-primary">บันทึกข้อมูล</button>
@@ -720,7 +785,8 @@
             </form>
         </div>
     </div>
-<!-- Modal แจ้งเตือนขนาดใหญ่กลางจอฝั่งแอดมิน (เมื่อมีสมาชิกกดแลกของรางวัล) -->
+
+    <!-- Modal แจ้งเตือนขนาดใหญ่กลางจอฝั่งแอดมิน (เมื่อมีสมาชิกกดแลกของรางวัล) -->
     <div id="admin-redeem-alert-modal" class="modal hidden" style="z-index: 9999;">
         <div class="modal-content" style="max-width: 460px; text-align: center; border-top: 10px solid #16A34A; box-shadow: 0 20px 50px rgba(0,0,0,0.35);">
             <div style="background: #DCFCE7; color: #166534; font-size: 14px; font-weight: 700; padding: 6px 16px; border-radius: 99px; display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px;">
@@ -740,6 +806,7 @@
             </button>
         </div>
     </div>
+
     <!-- ไลบรารีสร้างบาร์โค้ด (JsBarcode) และเชื่อมต่อ Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
