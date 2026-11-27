@@ -12,6 +12,7 @@ const SESSION_KEY = 'muk_rcheewa_user_id';
 const DEFAULT_SPIN_CONFIG = {
     enabled: true,
     cost: 3,
+    labels: ['+1 แต้ม', '+3 แต้ม', '+5 แต้ม', '+2 แต้ม', '+10 แต้ม', '+15 แต้ม'],
     prizes: [1, 3, 5, 2, 10, 15],
     weights: [30, 28, 18, 15, 7, 2]
 };
@@ -90,13 +91,17 @@ async function syncFromCloud() {
                         const prizes = Array.isArray(parsed.prizes) && parsed.prizes.length === 6
                             ? parsed.prizes.map(v => Math.max(0, Number(v) || 0))
                             : [...DEFAULT_SPIN_CONFIG.prizes];
+                        const labels = Array.isArray(parsed.labels) && parsed.labels.length === 6
+                            ? parsed.labels.map((lbl, idx) => String(lbl || '').trim() || (prizes[idx] > 0 ? `+${prizes[idx]} แต้ม` : 'ไม่ได้แต้ม'))
+                            : prizes.map(p => (p > 0 ? `+${p} แต้ม` : 'ไม่ได้แต้ม'));
                         const weights = Array.isArray(parsed.weights) && parsed.weights.length === 6
-                            ? parsed.weights.map(v => Math.max(1, Number(v) || 1))
+                            ? parsed.weights.map(v => Math.max(0, Number(v) || 0))
                             : [...DEFAULT_SPIN_CONFIG.weights];
 
                         db.settings.spin_config = {
                             enabled: parsed.enabled !== false,
                             cost: Number.isFinite(Number(parsed.cost)) && Number(parsed.cost) >= 0 ? Number(parsed.cost) : 3,
+                            labels,
                             prizes,
                             weights
                         };
@@ -734,11 +739,12 @@ function renderCheckinCalendar() {
 // วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin)
 function syncWheelLabelsUI() {
     const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
+    const labels = cfg.labels || cfg.prizes.map(p => (p > 0 ? `+${p} แต้ม` : 'ไม่ได้แต้ม'));
+
     for (let i = 0; i < 6; i++) {
         const lbl = document.getElementById(`wheel-lbl-${i}`);
         if (lbl) {
-            const val = Number(cfg.prizes[i]) || 0;
-            lbl.textContent = val > 0 ? `+${val} แต้ม` : 'ไม่ได้แต้ม';
+            lbl.textContent = labels[i] || '';
         }
     }
 
@@ -749,10 +755,10 @@ function syncWheelLabelsUI() {
 
     const descEl = document.getElementById('spin-desc-text');
     if (descEl) {
-        const maxPrize = Math.max(...cfg.prizes.map(n => Number(n) || 0));
+        const rewardListText = labels.filter((v, idx, arr) => arr.indexOf(v) === idx).join(' / ');
         descEl.innerHTML = cfg.cost > 0
-            ? `ใช้ <strong>${cfg.cost} แต้ม</strong> ต่อการหมุน 1 ครั้ง ลุ้นรับสูงสุด <strong>${maxPrize} แต้ม!</strong>`
-            : `หมุนวงล้อ<strong>ฟรี!</strong> ลุ้นรับโบนัสสูงสุด <strong>${maxPrize} แต้ม!</strong>`;
+            ? `ใช้ <strong>${cfg.cost} แต้ม</strong> ต่อการหมุน 1 ครั้ง<br><small style="color:var(--primary-blue);">รางวัลในวงล้อ: ${escapeHTML(rewardListText)}</small>`
+            : `หมุนวงล้อ<strong>ฟรี!</strong><br><small style="color:var(--primary-blue);">รางวัลในวงล้อ: ${escapeHTML(rewardListText)}</small>`;
     }
 
     const spinNowBtn = document.getElementById('btn-spin-now');
@@ -793,6 +799,16 @@ async function handleSpinWheel() {
         return;
     }
 
+    const prizes = cfg.prizes.map(p => Math.max(0, Number(p) || 0));
+    const labels = cfg.labels || prizes.map(p => (p > 0 ? `+${p} แต้ม` : 'ไม่ได้แต้ม'));
+    const weights = cfg.weights.map(w => Math.max(0, Number(w) || 0));
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+    if (totalWeight <= 0) {
+        showToast('ยังไม่ได้กำหนดโอกาสออกรางวัลในวงล้อ กรุณาติดต่อแอดมิน');
+        return;
+    }
+
     isSpinning = true;
     const btn = document.getElementById('btn-spin-now');
     const resultBox = document.getElementById('spin-result-box');
@@ -804,14 +820,11 @@ async function handleSpinWheel() {
         resultBox.textContent = 'กำลังหมุนลุ้นรางวัล...';
     }
 
-    const prizes = cfg.prizes.map(p => Math.max(0, Number(p) || 0));
-    const weights = cfg.weights.map(w => Math.max(1, Number(w) || 1));
-    const totalWeight = weights.reduce((a, b) => a + b, 0);
     let rand = Math.random() * totalWeight;
     let chosenIdx = 0;
 
     for (let i = 0; i < weights.length; i++) {
-        if (rand < weights[i]) {
+        if (weights[i] > 0 && rand < weights[i]) {
             chosenIdx = i;
             break;
         }
@@ -819,6 +832,7 @@ async function handleSpinWheel() {
     }
 
     const wonPoints = prizes[chosenIdx];
+    const wonLabel = labels[chosenIdx];
     const sliceCenterAngle = chosenIdx * 60 + 30;
     const targetMod = (360 - sliceCenterAngle) % 360;
     const currentMod = ((currentWheelRotation % 360) + 360) % 360;
@@ -840,7 +854,7 @@ async function handleSpinWheel() {
                     user_id: latestUser.id,
                     amount: 0,
                     points_earned: netDelta,
-                    note: `หมุนวงล้อลุ้นโชค (ใช้ ${spinCost} แต้ม, ได้รับ +${wonPoints} แต้ม)`
+                    note: `หมุนวงล้อลุ้นโชค (ใช้ ${spinCost} แต้ม ➔ ได้รับ "${wonLabel}")`
                 }])
             ]);
 
@@ -854,15 +868,16 @@ async function handleSpinWheel() {
             const ptsEl = document.getElementById('spin-user-points');
             if (ptsEl) ptsEl.textContent = netPoints.toLocaleString();
 
+            const isNoPrize = wonPoints === 0 && (wonLabel.includes('ไม่ได้') || wonLabel.includes('เกลือ') || wonLabel.includes('เสียใจ'));
             if (resultBox) {
-                if (wonPoints > 0) {
+                if (!isNoPrize) {
                     resultBox.style.color = 'var(--success-green)';
-                    resultBox.innerHTML = `<i class="fa-solid fa-sparkles"></i> ยินดีด้วย! คุณได้รับ +${wonPoints} แต้ม!`;
-                    showToast(`หมุนวงล้อได้ +${wonPoints} แต้ม!`);
+                    resultBox.innerHTML = `<i class="fa-solid fa-sparkles"></i> ยินดีด้วย! คุณได้รับ "${escapeHTML(wonLabel)}"`;
+                    showToast(`หมุนวงล้อได้รับ "${wonLabel}"!`);
                 } else {
                     resultBox.style.color = 'var(--danger-red)';
-                    resultBox.textContent = 'เสียดายจัง รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะ!';
-                    showToast('รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะครับ');
+                    resultBox.textContent = `ผลการหมุน: ${wonLabel} ลองใหม่อีกครั้งนะ!`;
+                    showToast(`${wonLabel} ลองใหม่อีกครั้งนะครับ`);
                 }
             }
         } catch (err) {
@@ -1424,19 +1439,55 @@ function renderAdminDashboard() {
 }
 
 // --- ตั้งค่ารางวัลในวงล้อลุ้นแต้ม (Admin) ---
+function updateSpinWeightSummary() {
+    let total = 0;
+    for (let i = 0; i < 6; i++) {
+        total += Math.max(0, Number(document.getElementById(`spin-weight-${i}`)?.value) || 0);
+    }
+    const badge = document.getElementById('spin-total-weight-badge');
+    if (!badge) return;
+
+    badge.textContent = `ผลรวมโอกาสออกรางวัล: ${total}%`;
+    if (total === 100) {
+        badge.style.background = '#DCFCE7';
+        badge.style.color = '#166534';
+    } else {
+        badge.style.background = '#FEE2E2';
+        badge.style.color = '#991B1B';
+    }
+}
+
+function resetSpinSettingsDefault() {
+    if (!confirm('ต้องการคืนค่าการตั้งค่าวงล้อกลับเป็นค่าเริ่มต้นหรือไม่?')) return;
+    document.getElementById('spin-cfg-enabled').value = '1';
+    document.getElementById('spin-cfg-cost').value = DEFAULT_SPIN_CONFIG.cost;
+    for (let i = 0; i < 6; i++) {
+        const lblEl = document.getElementById(`spin-label-${i}`);
+        if (lblEl) lblEl.value = DEFAULT_SPIN_CONFIG.labels[i];
+        document.getElementById(`spin-prize-${i}`).value = DEFAULT_SPIN_CONFIG.prizes[i];
+        document.getElementById(`spin-weight-${i}`).value = DEFAULT_SPIN_CONFIG.weights[i];
+    }
+    updateSpinWeightSummary();
+    showToast('คืนค่าเริ่มต้นในฟอร์มแล้ว กด "บันทึกการตั้งค่าวงล้อ" เพื่อยืนยัน');
+}
+
 function renderSpinSettingsForm() {
     const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
+    const labels = cfg.labels || cfg.prizes.map(p => (p > 0 ? `+${p} แต้ม` : 'ไม่ได้แต้ม'));
     const enabledEl = document.getElementById('spin-cfg-enabled');
     const costEl = document.getElementById('spin-cfg-cost');
     if (enabledEl) enabledEl.value = cfg.enabled ? '1' : '0';
     if (costEl) costEl.value = cfg.cost;
 
     for (let i = 0; i < 6; i++) {
+        const labelInput = document.getElementById(`spin-label-${i}`);
         const prizeInput = document.getElementById(`spin-prize-${i}`);
         const weightInput = document.getElementById(`spin-weight-${i}`);
+        if (labelInput) labelInput.value = labels[i] ?? '';
         if (prizeInput) prizeInput.value = cfg.prizes[i];
         if (weightInput) weightInput.value = cfg.weights[i];
     }
+    updateSpinWeightSummary();
 }
 
 async function handleSaveSpinSettings(e) {
@@ -1445,14 +1496,29 @@ async function handleSaveSpinSettings(e) {
     const enabled = document.getElementById('spin-cfg-enabled').value === '1';
     const cost = Math.max(0, parseInt(document.getElementById('spin-cfg-cost').value, 10) || 0);
 
+    const labels = [];
     const prizes = [];
     const weights = [];
+    let totalWeight = 0;
+
     for (let i = 0; i < 6; i++) {
-        prizes.push(Math.max(0, parseInt(document.getElementById(`spin-prize-${i}`).value, 10) || 0));
-        weights.push(Math.max(1, parseInt(document.getElementById(`spin-weight-${i}`).value, 10) || 1));
+        const prizeVal = Math.max(0, parseInt(document.getElementById(`spin-prize-${i}`).value, 10) || 0);
+        const rawLabel = (document.getElementById(`spin-label-${i}`)?.value || '').trim();
+        const labelVal = rawLabel || (prizeVal > 0 ? `+${prizeVal} แต้ม` : 'ไม่ได้แต้ม');
+        const weightVal = Math.max(0, parseFloat(document.getElementById(`spin-weight-${i}`).value) || 0);
+
+        labels.push(labelVal);
+        prizes.push(prizeVal);
+        weights.push(weightVal);
+        totalWeight += weightVal;
     }
 
-    const newConfig = { enabled, cost, prizes, weights };
+    if (totalWeight !== 100) {
+        showToast(`ผลรวมโอกาสออกรางวัลทั้ง 6 ช่องต้องเท่ากับ 100% (ปัจจุบันรวมได้ ${totalWeight}%)`);
+        return;
+    }
+
+    const newConfig = { enabled, cost, labels, prizes, weights };
 
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก...';
@@ -1460,13 +1526,14 @@ async function handleSaveSpinSettings(e) {
     const { error } = await sb.from('settings').upsert({
         setting_key: 'lucky_spin_config',
         setting_value: JSON.stringify(newConfig)
-    });
+    }, { onConflict: 'setting_key' });
 
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าวงล้อ';
 
     if (error) {
-        showToast('เกิดข้อผิดพลาดในการบันทึกการตั้งค่าวงล้อ');
+        console.error('Save spin settings error:', error);
+        showToast('บันทึกไม่สำเร็จ: กรุณาตรวจสอบสิทธิ์ตาราง settings ใน Supabase');
         return;
     }
 

@@ -430,7 +430,9 @@
                 <div class="card-box" style="margin-top: 20px;">
                     <div class="card-header-flex">
                         <h3 style="margin-bottom: 0;"><i class="fa-solid fa-dharmachakra"></i> ตั้งค่ารางวัลวงล้อลุ้นแต้ม (Lucky Spin)</h3>
-                        <span style="font-size: 12px; color: var(--text-muted);">ปรับแต้มที่ใช้หมุนและรางวัลทั้ง 6 ช่องได้ตามต้องการ</span>
+                        <span id="spin-total-weight-badge" style="font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 20px; background: #DCFCE7; color: #166534;">
+                            ผลรวมโอกาสออกรางวัล: 100%
+                        </span>
                     </div>
                     <form onsubmit="handleSaveSpinSettings(event)">
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
@@ -442,7 +444,7 @@
                                 </select>
                             </div>
                             <div class="form-group" style="margin-bottom: 0;">
-                                <label for="spin-cfg-cost">แต้มที่ใช้ต่อการหมุน 1 ครั้ง</label>
+                                <label for="spin-cfg-cost">แต้มที่ใช้ต่อการหมุน 1 ครั้ง (ใส่ 0 = หมุนฟรี)</label>
                                 <input type="number" id="spin-cfg-cost" min="0" required placeholder="เช่น 3">
                             </div>
                         </div>
@@ -450,49 +452,68 @@
                         <div class="spin-config-grid">
                             <div class="spin-slot-box" style="border-top: 4px solid #FACC15;">
                                 <span class="slot-title">ช่องที่ 1 (สีเหลือง)</span>
-                                <label for="spin-prize-0">รางวัลที่ได้ (แต้ม)</label>
+                                <label for="spin-label-0">ชื่อรางวัลบนวงล้อ</label>
+                                <input type="text" id="spin-label-0" placeholder="เช่น +1 แต้ม" required>
+                                <label for="spin-prize-0">แต้มที่บวกเพิ่มอัตโนมัติ</label>
                                 <input type="number" id="spin-prize-0" min="0" required>
-                                <label for="spin-weight-0">น้ำหนักโอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-0" min="1" required>
+                                <label for="spin-weight-0">โอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-0" min="0" max="100" oninput="updateSpinWeightSummary()" required>
                             </div>
                             <div class="spin-slot-box" style="border-top: 4px solid #3B82F6;">
                                 <span class="slot-title">ช่องที่ 2 (สีน้ำเงิน)</span>
-                                <label for="spin-prize-1">รางวัลที่ได้ (แต้ม)</label>
+                                <label for="spin-label-1">ชื่อรางวัลบนวงล้อ</label>
+                                <input type="text" id="spin-label-1" placeholder="เช่น +3 แต้ม" required>
+                                <label for="spin-prize-1">แต้มที่บวกเพิ่มอัตโนมัติ</label>
                                 <input type="number" id="spin-prize-1" min="0" required>
-                                <label for="spin-weight-1">น้ำหนักโอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-1" min="1" required>
+                                <label for="spin-weight-1">โอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-1" min="0" max="100" oninput="updateSpinWeightSummary()" required>
                             </div>
                             <div class="spin-slot-box" style="border-top: 4px solid #16A34A;">
                                 <span class="slot-title">ช่องที่ 3 (สีเขียว)</span>
-                                <label for="spin-prize-2">รางวัลที่ได้ (แต้ม)</label>
+                                <label for="spin-label-2">ชื่อรางวัลบนวงล้อ</label>
+                                <input type="text" id="spin-label-2" placeholder="เช่น +5 แต้ม" required>
+                                <label for="spin-prize-2">แต้มที่บวกเพิ่มอัตโนมัติ</label>
                                 <input type="number" id="spin-prize-2" min="0" required>
-                                <label for="spin-weight-2">น้ำหนักโอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-2" min="1" required>
+                                <label for="spin-weight-2">โอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-2" min="0" max="100" oninput="updateSpinWeightSummary()" required>
                             </div>
                             <div class="spin-slot-box" style="border-top: 4px solid #F97316;">
                                 <span class="slot-title">ช่องที่ 4 (สีส้ม)</span>
-                                <label for="spin-prize-3">รางวัลที่ได้ (แต้ม)</label>
+                                <label for="spin-label-3">ชื่อรางวัลบนวงล้อ</label>
+                                <input type="text" id="spin-label-3" placeholder="เช่น +2 แต้ม" required>
+                                <label for="spin-prize-3">แต้มที่บวกเพิ่มอัตโนมัติ</label>
                                 <input type="number" id="spin-prize-3" min="0" required>
-                                <label for="spin-weight-3">น้ำหนักโอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-3" min="1" required>
+                                <label for="spin-weight-3">โอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-3" min="0" max="100" oninput="updateSpinWeightSummary()" required>
                             </div>
                             <div class="spin-slot-box" style="border-top: 4px solid #8B5CF6;">
                                 <span class="slot-title">ช่องที่ 5 (สีม่วง)</span>
-                                <label for="spin-prize-4">รางวัลที่ได้ (แต้ม)</label>
+                                <label for="spin-label-4">ชื่อรางวัลบนวงล้อ</label>
+                                <input type="text" id="spin-label-4" placeholder="เช่น +10 แต้ม" required>
+                                <label for="spin-prize-4">แต้มที่บวกเพิ่มอัตโนมัติ</label>
                                 <input type="number" id="spin-prize-4" min="0" required>
-                                <label for="spin-weight-4">น้ำหนักโอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-4" min="1" required>
+                                <label for="spin-weight-4">โอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-4" min="0" max="100" oninput="updateSpinWeightSummary()" required>
                             </div>
                             <div class="spin-slot-box" style="border-top: 4px solid #EF4444;">
                                 <span class="slot-title">ช่องที่ 6 (สีแดง)</span>
-                                <label for="spin-prize-5">รางวัลที่ได้ (แต้ม)</label>
+                                <label for="spin-label-5">ชื่อรางวัลบนวงล้อ</label>
+                                <input type="text" id="spin-label-5" placeholder="เช่น ฟรีน้ำ 1 แก้ว" required>
+                                <label for="spin-prize-5">แต้มที่บวกเพิ่มอัตโนมัติ</label>
                                 <input type="number" id="spin-prize-5" min="0" required>
-                                <label for="spin-weight-5">น้ำหนักโอกาสออก (%)</label>
-                                <input type="number" id="spin-weight-5" min="1" required>
+                                <label for="spin-weight-5">โอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-5" min="0" max="100" oninput="updateSpinWeightSummary()" required>
                             </div>
                         </div>
 
-                        <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+                        <div style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">
+                            * <strong>หมายเหตุ:</strong> หากช่องใดเป็นของรางวัลหน้าร้าน (ไม่ได้แจกเป็นแต้ม) ให้ตั้งชื่อรางวัลบนวงล้อ (เช่น <code>ฟรีน้ำ 1 แก้ว</code>) และใส่แต้มที่บวกเพิ่มเป็น <code>0</code> ระบบจะบันทึกชื่อรางวัลลงในประวัติสมาชิกให้แสดงหน้าร้านได้ทันที
+                        </div>
+
+                        <div style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 10px;">
+                            <button type="button" class="btn btn-outline" onclick="resetSpinSettingsDefault()">
+                                <i class="fa-solid fa-rotate-left"></i> คืนค่าเริ่มต้น
+                            </button>
                             <button type="submit" id="btn-save-spin-cfg" class="btn btn-primary">
                                 <i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าวงล้อ
                             </button>
