@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + แลกรางวัลอัตโนมัติ + Tier + Check-in + Lucky Spin + Audit Log)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + Tier + Check-in Calendar + Custom Lucky Spin + Audit Log)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -9,10 +9,18 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const SESSION_KEY = 'muk_rcheewa_user_id';
 
+const DEFAULT_SPIN_CONFIG = {
+    enabled: true,
+    cost: 3,
+    prizes: [1, 3, 5, 2, 10, 15],
+    weights: [30, 28, 18, 15, 7, 2]
+};
+
 let db = {
     settings: {
         baht_per_point: 20,
-        welcome_bonus: 5
+        welcome_bonus: 5,
+        spin_config: { ...DEFAULT_SPIN_CONFIG }
     },
     users: [],
     rewards: [],
@@ -26,6 +34,8 @@ let rewardFilterMode = 'all';
 let reportPeriod = 'today';
 let isSpinning = false;
 let currentWheelRotation = 0;
+let calViewYear = new Date().getFullYear();
+let calViewMonth = new Date().getMonth();
 
 // โหลดข้อมูลล่าสุดทั้งหมดจาก Supabase
 async function syncFromCloud() {
@@ -49,7 +59,17 @@ async function syncFromCloud() {
 
         if (settingsRes.data) {
             settingsRes.data.forEach(s => {
-                if (!s.setting_key.startsWith('reset_req_')) {
+                if (s.setting_key === 'lucky_spin_config') {
+                    try {
+                        const parsed = JSON.parse(s.setting_value);
+                        db.settings.spin_config = {
+                            enabled: parsed.enabled !== false,
+                            cost: Number(parsed.cost) >= 0 ? Number(parsed.cost) : 3,
+                            prizes: Array.isArray(parsed.prizes) && parsed.prizes.length === 6 ? parsed.prizes.map(Number) : [...DEFAULT_SPIN_CONFIG.prizes],
+                            weights: Array.isArray(parsed.weights) && parsed.weights.length === 6 ? parsed.weights.map(Number) : [...DEFAULT_SPIN_CONFIG.weights]
+                        };
+                    } catch (e) {}
+                } else if (!s.setting_key.startsWith('reset_req_')) {
                     db.settings[s.setting_key] = parseInt(s.setting_value);
                 }
             });
@@ -401,7 +421,7 @@ function handleLogout() {
 }
 
 // ==========================================================
-// 1. ระบบสมาชิก (Member Functions: Barcode, Tier, Check-in, Lucky Spin)
+// 1. ระบบสมาชิก (Member Functions: Barcode, Tier, Check-in Calendar, Lucky Spin)
 // ==========================================================
 function generateMemberBarcode(codeText) {
     const svgEl = document.getElementById('member-barcode');
@@ -441,15 +461,23 @@ function openMemberBarcodeModal() {
     document.getElementById('barcode-modal').classList.remove('hidden');
 }
 
-// เช็กอินรายวันรับแต้มฟรี (+1 แต้ม)
+// เช็กอินรายวันรับแต้มฟรี (+1 แต้ม) & ปฏิทินการเช็กอิน
+function getMemberCheckinDatesSet() {
+    const set = new Set();
+    if (!currentUser) return set;
+    db.point_history.forEach(h => {
+        if (h.user_id === currentUser.id && h.note === 'เช็กอินรายวันรับแต้มฟรี') {
+            const key = getLocalDateKey(h.created_at);
+            if (key) set.add(key);
+        }
+    });
+    return set;
+}
+
 function hasCheckedInToday() {
     if (!currentUser) return false;
     const todayKey = getLocalDateKey();
-    return db.point_history.some(h =>
-        h.user_id === currentUser.id &&
-        h.note === 'เช็กอินรายวันรับแต้มฟรี' &&
-        getLocalDateKey(h.created_at) === todayKey
-    );
+    return getMemberCheckinDatesSet().has(todayKey);
 }
 
 function updateCheckinButtonUI() {
@@ -462,7 +490,7 @@ function updateCheckinButtonUI() {
     } else {
         btn.disabled = false;
         btn.classList.remove('checked');
-        btn.innerHTML = '<i class="fa-solid fa-calendar-check"></i> เช็กอินวันนี้ (+1 แต้ม)';
+        btn.innerHTML = '<i class="fa-solid fa-calendar-check"></i> เช็กอิน (+1 แต้ม)';
     }
 }
 
@@ -497,9 +525,106 @@ async function handleDailyCheckin() {
     showToast('เช็กอินสำเร็จ! รับฟรี +1 แต้ม');
 }
 
-// วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin)
+function openCheckinCalendarModal() {
+    const now = new Date();
+    calViewYear = now.getFullYear();
+    calViewMonth = now.getMonth();
+    renderCheckinCalendar();
+    document.getElementById('checkin-calendar-modal').classList.remove('hidden');
+}
+
+function changeCalendarMonth(delta) {
+    calViewMonth += delta;
+    if (calViewMonth < 0) {
+        calViewMonth = 11;
+        calViewYear -= 1;
+    } else if (calViewMonth > 11) {
+        calViewMonth = 0;
+        calViewYear += 1;
+    }
+    renderCheckinCalendar();
+}
+
+function renderCheckinCalendar() {
+    const monthNames = [
+        'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+        'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+    ];
+    const thaiYear = calViewYear + 543;
+    document.getElementById('cal-month-title').textContent = `${monthNames[calViewMonth]} ${thaiYear}`;
+
+    const checkedSet = getMemberCheckinDatesSet();
+    const todayKey = getLocalDateKey();
+
+    const firstDayOfWeek = new Date(calViewYear, calViewMonth, 1).getDay();
+    const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
+
+    const grid = document.getElementById('cal-days-grid');
+    let html = '';
+    let checkedThisMonth = 0;
+
+    for (let i = 0; i < firstDayOfWeek; i++) {
+        html += `<div class="cal-cell empty"></div>`;
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateKey = `${calViewYear}-${String(calViewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const isChecked = checkedSet.has(dateKey);
+        const isToday = dateKey === todayKey;
+
+        if (isChecked) checkedThisMonth++;
+
+        const classes = ['cal-cell'];
+        if (isChecked) classes.push('checked');
+        if (isToday) classes.push('today');
+
+        html += `
+            <div class="${classes.join(' ')}">
+                <span>${day}</span>
+                ${isChecked ? '<i class="fa-solid fa-check"></i>' : ''}
+            </div>
+        `;
+    }
+
+    grid.innerHTML = html;
+    document.getElementById('cal-month-summary').textContent = `เช็กอินเดือนนี้ ${checkedThisMonth} วัน`;
+}
+
+// วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin - ใช้ค่าจากแอดมิน)
+function syncWheelLabelsUI() {
+    const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
+    for (let i = 0; i < 6; i++) {
+        const lbl = document.getElementById(`wheel-lbl-${i}`);
+        if (lbl) {
+            const val = Number(cfg.prizes[i]) || 0;
+            lbl.textContent = val > 0 ? `+${val} แต้ม` : 'ไม่ได้แต้ม';
+        }
+    }
+
+    const openBtn = document.getElementById('btn-open-lucky-spin');
+    if (openBtn) {
+        openBtn.style.display = cfg.enabled ? 'inline-flex' : 'none';
+    }
+
+    const descEl = document.getElementById('spin-desc-text');
+    if (descEl) {
+        const maxPrize = Math.max(...cfg.prizes.map(Number));
+        descEl.innerHTML = cfg.cost > 0
+            ? `ใช้ <strong>${cfg.cost} แต้ม</strong> ต่อการหมุน 1 ครั้ง ลุ้นรับสูงสุด <strong>${maxPrize} แต้ม!</strong>`
+            : `หมุนวงล้อ<strong>ฟรี!</strong> ลุ้นรับโบนัสสูงสุด <strong>${maxPrize} แต้ม!</strong>`;
+    }
+
+    const spinNowBtn = document.getElementById('btn-spin-now');
+    if (spinNowBtn && !isSpinning) {
+        spinNowBtn.innerHTML = cfg.cost > 0
+            ? `<i class="fa-solid fa-play"></i> หมุนวงล้อเลย! (ใช้ ${cfg.cost} แต้ม)`
+            : `<i class="fa-solid fa-play"></i> หมุนวงล้อฟรีเลย!`;
+    }
+}
+
 function openLuckySpinModal() {
     if (!currentUser) return;
+    syncWheelLabelsUI();
     document.getElementById('spin-user-points').textContent = currentUser.points.toLocaleString();
     document.getElementById('spin-result-box').textContent = '';
     document.getElementById('spin-modal').classList.remove('hidden');
@@ -507,12 +632,19 @@ function openLuckySpinModal() {
 
 async function handleSpinWheel() {
     if (!currentUser || isSpinning) return;
-    const SPIN_COST = 3;
 
     await syncFromCloud();
+    const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
+    if (!cfg.enabled) {
+        showToast('วงล้อลุ้นแต้มปิดให้บริการชั่วคราว');
+        closeModal('spin-modal');
+        return;
+    }
+
+    const spinCost = Number(cfg.cost) || 0;
     const latestUser = db.users.find(u => u.id === currentUser.id);
-    if (!latestUser || latestUser.points < SPIN_COST) {
-        showToast(`แต้มไม่พอหมุนวงล้อ (ต้องใช้ ${SPIN_COST} แต้ม)`);
+    if (!latestUser || latestUser.points < spinCost) {
+        showToast(`แต้มไม่พอหมุนวงล้อ (ต้องใช้ ${spinCost} แต้ม)`);
         return;
     }
 
@@ -524,9 +656,8 @@ async function handleSpinWheel() {
     btn.disabled = true;
     resultBox.textContent = 'กำลังหมุนลุ้นรางวัล...';
 
-    // 6 ช่องบนวงล้อ (เรียงตามเข็มนาฬิกา: 30, 90, 150, 210, 270, 330 องศา)
-    const prizes = [1, 3, 5, 2, 10, 15];
-    const weights = [30, 28, 18, 15, 7, 2]; // โอกาสออกแต่ละช่อง (%)
+    const prizes = cfg.prizes.map(Number);
+    const weights = cfg.weights.map(w => Math.max(1, Number(w) || 1));
     const totalWeight = weights.reduce((a, b) => a + b, 0);
     let rand = Math.random() * totalWeight;
     let chosenIdx = 0;
@@ -544,10 +675,10 @@ async function handleSpinWheel() {
     const currentMod = ((currentWheelRotation % 360) + 360) % 360;
     const delta = (targetMod - currentMod + 360) % 360;
 
-    currentWheelRotation += 1800 + delta; // หมุน 5 รอบเต็ม + ลงล็อกช่องรางวัล
+    currentWheelRotation += 1800 + delta;
     wheel.style.transform = `rotate(${currentWheelRotation}deg)`;
 
-    const netPoints = latestUser.points - SPIN_COST + wonPoints;
+    const netPoints = latestUser.points - spinCost + wonPoints;
 
     setTimeout(async () => {
         await Promise.all([
@@ -555,8 +686,8 @@ async function handleSpinWheel() {
             sb.from('point_history').insert([{
                 user_id: latestUser.id,
                 amount: 0,
-                points_earned: wonPoints - SPIN_COST,
-                note: `หมุนวงล้อลุ้นโชค (ใช้ ${SPIN_COST} แต้ม, ได้รับ +${wonPoints} แต้ม)`
+                points_earned: wonPoints - spinCost,
+                note: `หมุนวงล้อลุ้นโชค (ใช้ ${spinCost} แต้ม, ได้รับ +${wonPoints} แต้ม)`
             }])
         ]);
 
@@ -564,11 +695,19 @@ async function handleSpinWheel() {
         renderMemberDashboard();
 
         document.getElementById('spin-user-points').textContent = netPoints.toLocaleString();
-        resultBox.innerHTML = `<i class="fa-solid fa-sparkles"></i> ยินดีด้วย! คุณได้รับ +${wonPoints} แต้ม!`;
-        showToast(`หมุนวงล้อได้ +${wonPoints} แต้ม!`);
+        if (wonPoints > 0) {
+            resultBox.style.color = 'var(--success-green)';
+            resultBox.innerHTML = `<i class="fa-solid fa-sparkles"></i> ยินดีด้วย! คุณได้รับ +${wonPoints} แต้ม!`;
+            showToast(`หมุนวงล้อได้ +${wonPoints} แต้ม!`);
+        } else {
+            resultBox.style.color = 'var(--danger-red)';
+            resultBox.innerHTML = `เสียดายจัง รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะ!`;
+            showToast('รอบนี้ไม่ได้รับแต้ม ลองใหม่อีกครั้งนะครับ');
+        }
 
         isSpinning = false;
         btn.disabled = false;
+        syncWheelLabelsUI();
     }, 3600);
 }
 
@@ -752,7 +891,6 @@ function renderMemberDashboard() {
     document.getElementById('mem-current-points').textContent = currentUser.points.toLocaleString();
     document.getElementById('mem-rate-info').textContent = `ทุกยอดซื้อ ${db.settings.baht_per_point} บาท รับ 1 แต้ม`;
 
-    // อัปเดตป้ายระดับสมาชิก (Member Tier)
     const tier = getMemberTierInfo(currentUser.id, currentUser.points);
     const tierBadge = document.getElementById('mem-tier-badge');
     const tierNext = document.getElementById('mem-tier-next-text');
@@ -765,6 +903,7 @@ function renderMemberDashboard() {
     }
 
     updateCheckinButtonUI();
+    syncWheelLabelsUI();
     generateMemberBarcode(currentUser.student_id || currentUser.username);
     renderMemberPointsGoal();
     renderMemberPromotions();
@@ -1057,6 +1196,7 @@ function renderAdminDashboard() {
 
     document.getElementById('setting-baht-per-point').value = db.settings.baht_per_point;
 
+    renderSpinSettingsForm();
     renderPOSMemberSelect();
     renderRecentPOS();
     renderAdminRedemptions();
@@ -1064,6 +1204,58 @@ function renderAdminDashboard() {
     renderAdminMembers();
     renderAdminRewards();
     renderAdminReports();
+}
+
+// --- ตั้งค่ารางวัลในวงล้อลุ้นแต้ม (Admin) ---
+function renderSpinSettingsForm() {
+    const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
+    const enabledEl = document.getElementById('spin-cfg-enabled');
+    const costEl = document.getElementById('spin-cfg-cost');
+    if (enabledEl) enabledEl.value = cfg.enabled ? '1' : '0';
+    if (costEl) costEl.value = cfg.cost;
+
+    for (let i = 0; i < 6; i++) {
+        const prizeInput = document.getElementById(`spin-prize-${i}`);
+        const weightInput = document.getElementById(`spin-weight-${i}`);
+        if (prizeInput) prizeInput.value = cfg.prizes[i];
+        if (weightInput) weightInput.value = cfg.weights[i];
+    }
+}
+
+async function handleSaveSpinSettings(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save-spin-cfg');
+    const enabled = document.getElementById('spin-cfg-enabled').value === '1';
+    const cost = Math.max(0, parseInt(document.getElementById('spin-cfg-cost').value) || 0);
+
+    const prizes = [];
+    const weights = [];
+    for (let i = 0; i < 6; i++) {
+        prizes.push(Math.max(0, parseInt(document.getElementById(`spin-prize-${i}`).value) || 0));
+        weights.push(Math.max(1, parseInt(document.getElementById(`spin-weight-${i}`).value) || 1));
+    }
+
+    const newConfig = { enabled, cost, prizes, weights };
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก...';
+
+    const { error } = await sb.from('settings').upsert({
+        setting_key: 'lucky_spin_config',
+        setting_value: JSON.stringify(newConfig)
+    });
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าวงล้อ';
+
+    if (error) {
+        showToast('เกิดข้อผิดพลาดในการบันทึกการตั้งค่าวงล้อ');
+        return;
+    }
+
+    await syncFromCloud();
+    renderSpinSettingsForm();
+    showToast('บันทึกการตั้งค่าวงล้อลุ้นแต้มเรียบร้อยแล้ว!');
 }
 
 // --- ส่วนบันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS) ---
@@ -1519,7 +1711,6 @@ async function saveMember(e) {
             return;
         }
 
-        // บันทึก Audit Log ลงตาราง point_history หากมีการเปลี่ยนแปลงยอดแต้ม
         if (pointDiff !== 0) {
             const sign = pointDiff > 0 ? `+${pointDiff}` : `${pointDiff}`;
             await sb.from('point_history').insert([{

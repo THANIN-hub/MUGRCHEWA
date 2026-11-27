@@ -170,13 +170,16 @@
                             <div id="mem-goal-bar" style="width: 0%; height: 100%; background: var(--primary-blue); border-radius: 99px; transition: width 0.4s ease;"></div>
                         </div>
                     </div>
-                    <!-- ปุ่มกิจกรรมรายวัน (เช็กอินรับแต้มฟรี + วงล้อสุ่มแต้ม) -->
+                    <!-- ปุ่มกิจกรรมรายวัน (เช็กอิน + ปฏิทินเช็กอิน + วงล้อลุ้นแต้ม) -->
                     <div class="member-fun-actions">
                         <button type="button" id="btn-daily-checkin" class="btn-checkin" onclick="handleDailyCheckin()">
-                            <i class="fa-solid fa-calendar-check"></i> เช็กอินวันนี้ (+1 แต้ม)
+                            <i class="fa-solid fa-calendar-check"></i> เช็กอิน (+1 แต้ม)
                         </button>
-                        <button type="button" class="btn-lucky-spin" onclick="openLuckySpinModal()">
-                            <i class="fa-solid fa-dharmachakra fa-spin" style="--fa-animation-duration: 8s;"></i> วงล้อลุ้นแต้ม
+                        <button type="button" class="btn-calendar-view" onclick="openCheckinCalendarModal()">
+                            <i class="fa-solid fa-calendar-days"></i> ปฏิทินเช็กอิน
+                        </button>
+                        <button type="button" id="btn-open-lucky-spin" class="btn-lucky-spin" onclick="openLuckySpinModal()" style="grid-column: 1 / -1;">
+                            <i class="fa-solid fa-dharmachakra fa-spin" style="--fa-animation-duration: 8s;"></i> วงล้อลุ้นแต้มมหาสนุก
                         </button>
                     </div>
                 </div>
@@ -311,7 +314,7 @@
                 </button>
             </div>
 
-            <!-- แท็บ 1: บันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS รองรับเครื่องยิงบาร์โค้ด) -->
+            <!-- แท็บ 1: บันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS รองรับเครื่องยิงบาร์โค้ด) + ตั้งค่าวงล้อ -->
             <div id="admin-tab-pos" class="tab-content active">
                 <div class="pos-grid">
                     <div class="card-box">
@@ -386,6 +389,80 @@
                             </table>
                         </div>
                     </div>
+                </div>
+
+                <!-- กล่องตั้งค่ารางวัลในวงล้อลุ้นแต้ม (สำหรับแอดมิน) -->
+                <div class="card-box" style="margin-top: 20px;">
+                    <div class="card-header-flex">
+                        <h3 style="margin-bottom: 0;"><i class="fa-solid fa-dharmachakra"></i> ตั้งค่ารางวัลวงล้อลุ้นแต้ม (Lucky Spin)</h3>
+                        <span style="font-size: 12px; color: var(--text-muted);">ปรับแต้มที่ใช้หมุนและรางวัลทั้ง 6 ช่องได้ตามต้องการ</span>
+                    </div>
+                    <form onsubmit="handleSaveSpinSettings(event)">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>สถานะวงล้อลุ้นแต้ม</label>
+                                <select id="spin-cfg-enabled">
+                                    <option value="1">เปิดใช้งานให้สมาชิกเล่นได้</option>
+                                    <option value="0">ปิดซ่อนชั่วคราว</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>แต้มที่ใช้ต่อการหมุน 1 ครั้ง</label>
+                                <input type="number" id="spin-cfg-cost" min="0" required placeholder="เช่น 3">
+                            </div>
+                        </div>
+
+                        <div class="spin-config-grid">
+                            <div class="spin-slot-box" style="border-top: 4px solid #FACC15;">
+                                <span class="slot-title">ช่องที่ 1 (สีเหลือง)</span>
+                                <label>รางวัลที่ได้ (แต้ม)</label>
+                                <input type="number" id="spin-prize-0" min="0" required>
+                                <label>น้ำหนักโอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-0" min="1" required>
+                            </div>
+                            <div class="spin-slot-box" style="border-top: 4px solid #3B82F6;">
+                                <span class="slot-title">ช่องที่ 2 (สีน้ำเงิน)</span>
+                                <label>รางวัลที่ได้ (แต้ม)</label>
+                                <input type="number" id="spin-prize-1" min="0" required>
+                                <label>น้ำหนักโอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-1" min="1" required>
+                            </div>
+                            <div class="spin-slot-box" style="border-top: 4px solid #16A34A;">
+                                <span class="slot-title">ช่องที่ 3 (สีเขียว)</span>
+                                <label>รางวัลที่ได้ (แต้ม)</label>
+                                <input type="number" id="spin-prize-2" min="0" required>
+                                <label>น้ำหนักโอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-2" min="1" required>
+                            </div>
+                            <div class="spin-slot-box" style="border-top: 4px solid #F97316;">
+                                <span class="slot-title">ช่องที่ 4 (สีส้ม)</span>
+                                <label>รางวัลที่ได้ (แต้ม)</label>
+                                <input type="number" id="spin-prize-3" min="0" required>
+                                <label>น้ำหนักโอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-3" min="1" required>
+                            </div>
+                            <div class="spin-slot-box" style="border-top: 4px solid #8B5CF6;">
+                                <span class="slot-title">ช่องที่ 5 (สีม่วง)</span>
+                                <label>รางวัลที่ได้ (แต้ม)</label>
+                                <input type="number" id="spin-prize-4" min="0" required>
+                                <label>น้ำหนักโอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-4" min="1" required>
+                            </div>
+                            <div class="spin-slot-box" style="border-top: 4px solid #EF4444;">
+                                <span class="slot-title">ช่องที่ 6 (สีแดง)</span>
+                                <label>รางวัลที่ได้ (แต้ม)</label>
+                                <input type="number" id="spin-prize-5" min="0" required>
+                                <label>น้ำหนักโอกาสออก (%)</label>
+                                <input type="number" id="spin-weight-5" min="1" required>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+                            <button type="submit" id="btn-save-spin-cfg" class="btn btn-primary">
+                                <i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าวงล้อ
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
 
@@ -495,6 +572,46 @@
         </main>
     </div>
 
+    <!-- Modal ปฏิทินการเช็กอินรายวัน (Check-in Calendar) -->
+    <div id="checkin-calendar-modal" class="modal hidden">
+        <div class="modal-content" style="max-width: 430px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-calendar-days" style="color: var(--primary-blue);"></i> ปฏิทินการเช็กอินของคุณ</h3>
+                <button class="close-btn" onclick="closeModal('checkin-calendar-modal')">&times;</button>
+            </div>
+
+            <div class="cal-nav-bar">
+                <button type="button" class="btn btn-outline-sm" onclick="changeCalendarMonth(-1)">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <strong id="cal-month-title" style="color: var(--primary-blue); font-size: 16px;">-</strong>
+                <button type="button" class="btn btn-outline-sm" onclick="changeCalendarMonth(1)">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+
+            <div class="cal-weekdays">
+                <div>อา</div>
+                <div>จ</div>
+                <div>อ</div>
+                <div>พ</div>
+                <div>พฤ</div>
+                <div>ศ</div>
+                <div>ส</div>
+            </div>
+
+            <div id="cal-days-grid" class="cal-days-grid"></div>
+
+            <div class="cal-legend">
+                <span><i class="cal-dot checked"></i> เช็กอินแล้ว</span>
+                <span><i class="cal-dot today"></i> วันนี้</span>
+                <strong id="cal-month-summary" style="color: var(--success-green); margin-left: auto;">เช็กอินเดือนนี้ 0 วัน</strong>
+            </div>
+
+            <button type="button" class="btn btn-primary btn-block" style="margin-top: 14px;" onclick="closeModal('checkin-calendar-modal')">ปิดปฏิทิน</button>
+        </div>
+    </div>
+
     <!-- Modal วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin) -->
     <div id="spin-modal" class="modal hidden">
         <div class="modal-content" style="max-width: 420px; text-align: center;">
@@ -502,8 +619,8 @@
                 <h3><i class="fa-solid fa-dharmachakra" style="color: #D97706;"></i> วงล้อลุ้นแต้มมหาสนุก</h3>
                 <button class="close-btn" onclick="closeModal('spin-modal')">&times;</button>
             </div>
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-                ใช้ <strong>3 แต้ม</strong> ต่อการหมุน 1 ครั้ง ลุ้นรับโบนัสสูงสุด <strong>15 แต้ม!</strong>
+            <p id="spin-desc-text" style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+                ใช้ <strong>3 แต้ม</strong> ต่อการหมุน 1 ครั้ง ลุ้นรับโบนัสแต้มเพิ่ม!
             </p>
             <div style="font-size: 14px; font-weight: 600; color: var(--primary-blue); margin-bottom: 14px;">
                 แต้มคงเหลือของคุณ: <span id="spin-user-points" style="font-size: 18px; color: #D97706;">0</span> แต้ม
@@ -512,19 +629,19 @@
             <div class="wheel-container">
                 <div class="wheel-pointer">▼</div>
                 <div id="lucky-wheel" class="lucky-wheel">
-                    <div class="wheel-label" style="transform: rotate(30deg) translateY(-92px);">+1 แต้ม</div>
-                    <div class="wheel-label" style="transform: rotate(90deg) translateY(-92px);">+3 แต้ม</div>
-                    <div class="wheel-label" style="transform: rotate(150deg) translateY(-92px);">+5 แต้ม</div>
-                    <div class="wheel-label" style="transform: rotate(210deg) translateY(-92px);">+2 แต้ม</div>
-                    <div class="wheel-label" style="transform: rotate(270deg) translateY(-92px);">+10 แต้ม</div>
-                    <div class="wheel-label" style="transform: rotate(330deg) translateY(-92px);">+15 แต้ม</div>
+                    <div id="wheel-lbl-0" class="wheel-label" style="transform: rotate(30deg) translateY(-92px);">+1 แต้ม</div>
+                    <div id="wheel-lbl-1" class="wheel-label" style="transform: rotate(90deg) translateY(-92px);">+3 แต้ม</div>
+                    <div id="wheel-lbl-2" class="wheel-label" style="transform: rotate(150deg) translateY(-92px);">+5 แต้ม</div>
+                    <div id="wheel-lbl-3" class="wheel-label" style="transform: rotate(210deg) translateY(-92px);">+2 แต้ม</div>
+                    <div id="wheel-lbl-4" class="wheel-label" style="transform: rotate(270deg) translateY(-92px);">+10 แต้ม</div>
+                    <div id="wheel-lbl-5" class="wheel-label" style="transform: rotate(330deg) translateY(-92px);">+15 แต้ม</div>
                 </div>
             </div>
 
             <div id="spin-result-box" style="min-height: 28px; margin: 12px 0; font-weight: 700; font-size: 16px; color: var(--success-green);"></div>
 
             <button type="button" id="btn-spin-now" class="btn btn-secondary btn-block" style="font-size: 16px; padding: 12px;" onclick="handleSpinWheel()">
-                <i class="fa-solid fa-play"></i> หมุนวงล้อเลย! (ใช้ 3 แต้ม)
+                <i class="fa-solid fa-play"></i> หมุนวงล้อเลย!
             </button>
         </div>
     </div>
@@ -581,7 +698,7 @@
         </div>
     </div>
 
-    <!-- Modal ป๊อปอัพหลักฐานการแลกของรางวัล (แสดงกลางจอของยูสเซอร์เป็นรูปและข้อความ) -->
+    <!-- Modal ป๊อปอัพหลักฐานการแลกของรางวัล -->
     <div id="ticket-modal" class="modal hidden">
         <div class="modal-content" style="max-width: 400px; text-align: center; border-top: 8px solid #16A34A;">
             <div class="modal-header">
