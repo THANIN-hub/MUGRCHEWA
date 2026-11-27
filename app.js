@@ -130,6 +130,9 @@ function switchAuthTab(tab) {
 function openForgotModal() {
     const loginVal = document.getElementById('login-username').value.replace(/\D/g, '');
     document.getElementById('forgot-phone').value = loginVal;
+    document.getElementById('forgot-fullname').value = '';
+    document.getElementById('forgot-new-password').value = '';
+    document.getElementById('forgot-confirm-password').value = '';
     document.getElementById('forgot-modal').classList.remove('hidden');
 }
 
@@ -137,39 +140,61 @@ async function handleForgotPassword(e) {
     e.preventDefault();
     const btn = document.getElementById('btn-forgot-submit');
     const phone = document.getElementById('forgot-phone').value.replace(/\D/g, '');
+    const fullName = document.getElementById('forgot-fullname').value.trim().replace(/\s+/g, ' ');
+    const newPass = document.getElementById('forgot-new-password').value.trim();
+    const confirmPass = document.getElementById('forgot-confirm-password').value.trim();
 
     if (phone.length < 9 || phone.length > 10) {
         showToast('กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (9-10 หลัก)');
         return;
     }
 
+    if (!newPass) {
+        showToast('กรุณากรอกรหัสผ่านใหม่');
+        return;
+    }
+
+    if (newPass !== confirmPass) {
+        showToast('รหัสผ่านใหม่และยืนยันรหัสผ่านไม่ตรงกัน');
+        return;
+    }
+
     btn.disabled = true;
-    btn.textContent = 'กำลังตรวจสอบ...';
+    btn.textContent = 'กำลังตรวจสอบข้อมูล...';
 
     await syncFromCloud();
 
     const member = db.users.find(u =>
         u.role === 'member' &&
         u.student_id &&
-        u.student_id.replace(/\D/g, '') === phone
+        u.student_id.replace(/\D/g, '') === phone &&
+        u.full_name &&
+        u.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === fullName.toLowerCase()
     );
 
     if (!member) {
-        showToast('ไม่พบเบอร์โทรศัพท์นี้ในระบบสมาชิก');
+        showToast('เบอร์โทรศัพท์หรือชื่อ-นามสกุลไม่ตรงกับข้อมูลสมาชิกในระบบ');
         btn.disabled = false;
-        btn.textContent = 'ส่งคำขอรีเซ็ต';
+        btn.textContent = 'เปลี่ยนรหัสผ่านทันที';
         return;
     }
 
-    await sb.from('settings').upsert({
-        setting_key: `${RESET_KEY_PREFIX}${phone}`,
-        setting_value: new Date().toISOString()
-    });
+    const { error } = await sb.from('users').update({
+        password: newPass
+    }).eq('id', member.id);
 
     btn.disabled = false;
-    btn.textContent = 'ส่งคำขอรีเซ็ต';
+    btn.textContent = 'เปลี่ยนรหัสผ่านทันที';
+
+    if (error) {
+        showToast('เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน กรุณาลองใหม่อีกครั้ง');
+        return;
+    }
+
     closeModal('forgot-modal');
-    showToast(`ส่งคำขอรีเซ็ตรหัสผ่านของคุณ ${member.full_name} ไปยังหน้าเคาน์เตอร์แล้ว กรุณาแจ้งพนักงานร้าน`);
+    document.getElementById('login-username').value = phone;
+    document.getElementById('login-password').value = newPass;
+    showToast('เปลี่ยนรหัสผ่านสำเร็จ! กดเข้าสู่ระบบด้วยรหัสผ่านใหม่ได้ทันที');
 }
 
 function applyLoggedInUI(user) {

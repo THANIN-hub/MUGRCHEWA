@@ -454,24 +454,36 @@
         </main>
     </div>
 
-    <!-- Modal ลืมรหัสผ่าน (แจ้งรีเซ็ตกับทางร้าน) -->
+  <!-- Modal ลืมรหัสผ่าน (รีเซ็ตรหัสผ่านด้วยตนเอง) -->
     <div id="forgot-modal" class="modal hidden">
-        <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-content" style="max-width: 420px;">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-key"></i> แจ้งลืมรหัสผ่าน</h3>
+                <h3><i class="fa-solid fa-key"></i> ตั้งรหัสผ่านใหม่</h3>
                 <button class="close-btn" onclick="closeModal('forgot-modal')">&times;</button>
             </div>
             <form onsubmit="handleForgotPassword(event)">
                 <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-                    กรอกเบอร์โทรศัพท์ที่ใช้สมัครสมาชิก ระบบจะส่งคำขอไปยังหน้าเคาน์เตอร์ร้านมักอาชีวะเพื่อรีเซ็ตรหัสผ่านเป็น <strong>1234</strong> ให้ทันที
+                    กรอกเบอร์โทรศัพท์และชื่อ-นามสกุลให้ตรงกับที่สมัครไว้ เพื่อตั้งรหัสผ่านใหม่ได้ทันที
                 </p>
                 <div class="form-group">
                     <label>เบอร์โทรศัพท์ที่ลงทะเบียนไว้</label>
                     <input type="tel" id="forgot-phone" required maxlength="10" placeholder="เช่น 0812345678">
                 </div>
+                <div class="form-group">
+                    <label>ชื่อ-นามสกุลที่ใช้สมัคร (เพื่อยืนยันตัวตน)</label>
+                    <input type="text" id="forgot-fullname" required placeholder="เช่น นายสมชาย ใจดี">
+                </div>
+                <div class="form-group">
+                    <label>รหัสผ่านใหม่</label>
+                    <input type="password" id="forgot-new-password" required placeholder="ตั้งรหัสผ่านใหม่">
+                </div>
+                <div class="form-group">
+                    <label>ยืนยันรหัสผ่านใหม่</label>
+                    <input type="password" id="forgot-confirm-password" required placeholder="กรอกรหัสผ่านใหม่อีกครั้ง">
+                </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline" onclick="closeModal('forgot-modal')">ยกเลิก</button>
-                    <button type="submit" id="btn-forgot-submit" class="btn btn-primary">ส่งคำขอรีเซ็ต</button>
+                    <button type="submit" id="btn-forgot-submit" class="btn btn-primary">เปลี่ยนรหัสผ่านทันที</button>
                 </div>
             </form>
         </div>
