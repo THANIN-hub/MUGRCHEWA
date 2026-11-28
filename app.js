@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + Tier + Check-in Calendar + Custom Lucky Spin + Spin History + Audit Log)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + Tier + Audit Log)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -9,19 +9,10 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const SESSION_KEY = 'muk_rcheewa_user_id';
 
-const DEFAULT_SPIN_CONFIG = {
-    enabled: true,
-    cost: 3,
-    labels: ['+1 แต้ม', '+3 แต้ม', '+5 แต้ม', '+2 แต้ม', '+10 แต้ม', '+15 แต้ม'],
-    prizes: [1, 3, 5, 2, 10, 15],
-    weights: [30, 28, 18, 15, 7, 2]
-};
-
 let db = {
     settings: {
         baht_per_point: 20,
-        welcome_bonus: 5,
-        spin_config: { ...DEFAULT_SPIN_CONFIG }
+        welcome_bonus: 5
     },
     users: [],
     rewards: [],
@@ -33,11 +24,7 @@ let db = {
 let currentUser = null;
 let rewardFilterMode = 'all';
 let reportPeriod = 'today';
-let isSpinning = false;
 let isRedeeming = false;
-let currentWheelRotation = 0;
-let calViewYear = new Date().getFullYear();
-let calViewMonth = new Date().getMonth();
 let promoSlideIndex = 0;
 let promoSlideTimer = null;
 let realtimeChannel = null;
@@ -78,37 +65,13 @@ async function syncFromCloud() {
 
         db.settings = {
             baht_per_point: 20,
-            welcome_bonus: 5,
-            spin_config: { ...DEFAULT_SPIN_CONFIG }
+            welcome_bonus: 5
         };
 
         if (Array.isArray(settingsRes.data)) {
             settingsRes.data.forEach(s => {
                 if (!s || !s.setting_key) return;
-                if (s.setting_key === 'lucky_spin_config') {
-                    try {
-                        const parsed = JSON.parse(s.setting_value);
-                        const prizes = Array.isArray(parsed.prizes) && parsed.prizes.length === 6
-                            ? parsed.prizes.map(v => Math.max(0, Number(v) || 0))
-                            : [...DEFAULT_SPIN_CONFIG.prizes];
-                        const labels = Array.isArray(parsed.labels) && parsed.labels.length === 6
-                            ? parsed.labels.map((lbl, idx) => String(lbl || '').trim() || (prizes[idx] > 0 ? `+${prizes[idx]} แต้ม` : 'ไม่ได้แต้ม'))
-                            : prizes.map(p => (p > 0 ? `+${p} แต้ม` : 'ไม่ได้แต้ม'));
-                        const weights = Array.isArray(parsed.weights) && parsed.weights.length === 6
-                            ? parsed.weights.map(v => Math.max(0, Number(v) || 0))
-                            : [...DEFAULT_SPIN_CONFIG.weights];
-
-                        db.settings.spin_config = {
-                            enabled: parsed.enabled !== false,
-                            cost: Number.isFinite(Number(parsed.cost)) && Number(parsed.cost) >= 0 ? Number(parsed.cost) : 3,
-                            labels,
-                            prizes,
-                            weights
-                        };
-                    } catch (e) {
-                        db.settings.spin_config = { ...DEFAULT_SPIN_CONFIG };
-                    }
-                } else if (!s.setting_key.startsWith('reset_req_')) {
+                if (s.setting_key !== 'lucky_spin_config' && !s.setting_key.startsWith('reset_req_')) {
                     const numVal = parseInt(s.setting_value, 10);
                     if (Number.isFinite(numVal) && numVal > 0) {
                         db.settings[s.setting_key] = numVal;
@@ -174,50 +137,6 @@ function formatDateTime(isoString) {
 function formatTicketCode(id) {
     const num = Number(id);
     return `#${Number.isFinite(num) ? String(num).padStart(4, '0') : String(id || '0000')}`;
-}
-
-function formatSpinTicketCode(id) {
-    const num = Number(id);
-    return `#S${Number.isFinite(num) ? String(num).padStart(4, '0') : String(id || '0000')}`;
-}
-
-function parseSpinHistoryRecord(item) {
-    const note = String(item?.note || '');
-    const costMatch = note.match(/ใช้\s*(\d+)\s*แต้ม/);
-    const cost = costMatch ? Number(costMatch[1]) : 0;
-
-    let prizeLabel = '-';
-    const quoteMatch = note.match(/ได้รับ\s*"([^"]+)"/);
-    if (quoteMatch) {
-        prizeLabel = quoteMatch[1];
-    } else {
-        const legacyMatch = note.match(/ได้รับ\s*\+?(\d+)\s*แต้ม/);
-        if (legacyMatch) {
-            const pts = Number(legacyMatch[1]);
-            prizeLabel = pts > 0 ? `+${pts} แต้ม` : 'ไม่ได้แต้ม';
-        }
-    }
-
-    const netDelta = Number(item?.points_earned) || 0;
-    const isNoPrize = prizeLabel.includes('ไม่ได้') || prizeLabel.includes('เกลือ') || prizeLabel.includes('เสียใจ');
-
-    return { cost, prizeLabel, netDelta, isNoPrize };
-}
-
-function openSpinTicketModal(historyId) {
-    const item = db.point_history.find(h => String(h.id) === String(historyId));
-    if (!item) return;
-
-    const parsed = parseSpinHistoryRecord(item);
-    const owner = db.users.find(u => String(u.id) === String(item.user_id)) || currentUser;
-
-    document.getElementById('spin-ticket-reward').textContent = parsed.prizeLabel;
-    document.getElementById('spin-ticket-cost').textContent = parsed.cost > 0 ? `ใช้แต้มหมุน ${parsed.cost} แต้ม` : 'หมุนวงล้อฟรี (0 แต้ม)';
-    document.getElementById('spin-ticket-code').textContent = `รหัสอ้างอิง: ${formatSpinTicketCode(item.id)}`;
-    document.getElementById('spin-ticket-member').textContent = owner ? `ผู้หมุน: ${owner.full_name} (${owner.student_id || '-'})` : 'ผู้หมุน: -';
-    document.getElementById('spin-ticket-date').textContent = `วัน-เวลาที่หมุน: ${formatDateTime(item.created_at)}`;
-
-    document.getElementById('spin-ticket-modal')?.classList.remove('hidden');
 }
 
 function getLocalDateKey(isoString) {
@@ -586,7 +505,7 @@ function handleLogout() {
 }
 
 // ==========================================================
-// 1. ระบบสมาชิก (Member Functions: Barcode, Tier, Check-in Calendar, Lucky Spin)
+// 1. ระบบสมาชิก (Member Functions: Barcode, Tier, Rewards, History)
 // ==========================================================
 function generateMemberBarcode(codeText) {
     const svgEl = document.getElementById('member-barcode');
@@ -632,311 +551,6 @@ function openMemberBarcodeModal() {
     document.getElementById('barcode-modal-name').textContent = currentUser.full_name;
     document.getElementById('barcode-modal-phone').textContent = currentUser.student_id || '-';
     document.getElementById('barcode-modal')?.classList.remove('hidden');
-}
-
-function getMemberCheckinDatesSet() {
-    const set = new Set();
-    if (!currentUser) return set;
-    db.point_history.forEach(h => {
-        if (String(h.user_id) === String(currentUser.id) && h.note === 'เช็กอินรายวันรับแต้มฟรี') {
-            const key = getLocalDateKey(h.created_at);
-            if (key) set.add(key);
-        }
-    });
-    return set;
-}
-
-function hasCheckedInToday() {
-    if (!currentUser) return false;
-    const todayKey = getLocalDateKey();
-    return getMemberCheckinDatesSet().has(todayKey);
-}
-
-function updateCheckinButtonUI() {
-    const btn = document.getElementById('btn-daily-checkin');
-    if (!btn) return;
-    if (hasCheckedInToday()) {
-        btn.disabled = true;
-        btn.classList.add('checked');
-        btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> เช็กอินวันนี้แล้ว';
-    } else {
-        btn.disabled = false;
-        btn.classList.remove('checked');
-        btn.innerHTML = '<i class="fa-solid fa-calendar-check"></i> เช็กอิน (+1 แต้ม)';
-    }
-}
-
-async function handleDailyCheckin() {
-    if (!currentUser) return;
-    const btn = document.getElementById('btn-daily-checkin');
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังเช็กอิน...';
-    }
-
-    const ok = await syncFromCloud();
-    if (!ok) {
-        updateCheckinButtonUI();
-        return;
-    }
-
-    if (hasCheckedInToday()) {
-        updateCheckinButtonUI();
-        showToast('วันนี้คุณเช็กอินรับแต้มไปแล้ว พรุ่งนี้มาใหม่นะครับ!');
-        return;
-    }
-
-    const latestUser = db.users.find(u => String(u.id) === String(currentUser.id));
-    const basePoints = latestUser ? Number(latestUser.points) || 0 : Number(currentUser.points) || 0;
-    const newPoints = basePoints + 1;
-
-    const [updRes, insRes] = await Promise.all([
-        sb.from('users').update({ points: newPoints }).eq('id', currentUser.id),
-        sb.from('point_history').insert([{
-            user_id: currentUser.id,
-            amount: 0,
-            points_earned: 1,
-            note: 'เช็กอินรายวันรับแต้มฟรี'
-        }])
-    ]);
-
-    if (updRes.error || insRes.error) {
-        showToast('เกิดข้อผิดพลาดในการเช็กอิน กรุณาลองใหม่');
-        updateCheckinButtonUI();
-        return;
-    }
-
-    await syncFromCloud();
-    renderMemberDashboard();
-    showToast('เช็กอินสำเร็จ! รับฟรี +1 แต้ม');
-}
-
-function openCheckinCalendarModal() {
-    const now = new Date();
-    calViewYear = now.getFullYear();
-    calViewMonth = now.getMonth();
-    renderCheckinCalendar();
-    document.getElementById('checkin-calendar-modal')?.classList.remove('hidden');
-}
-
-function changeCalendarMonth(delta) {
-    calViewMonth += delta;
-    if (calViewMonth < 0) {
-        calViewMonth = 11;
-        calViewYear -= 1;
-    } else if (calViewMonth > 11) {
-        calViewMonth = 0;
-        calViewYear += 1;
-    }
-    renderCheckinCalendar();
-}
-
-function renderCheckinCalendar() {
-    const monthNames = [
-        'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-        'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
-    ];
-    const thaiYear = calViewYear + 543;
-    const titleEl = document.getElementById('cal-month-title');
-    if (titleEl) titleEl.textContent = `${monthNames[calViewMonth]} ${thaiYear}`;
-
-    const checkedSet = getMemberCheckinDatesSet();
-    const todayKey = getLocalDateKey();
-
-    const firstDayOfWeek = new Date(calViewYear, calViewMonth, 1).getDay();
-    const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
-
-    const grid = document.getElementById('cal-days-grid');
-    if (!grid) return;
-
-    let html = '';
-    let checkedThisMonth = 0;
-
-    for (let i = 0; i < firstDayOfWeek; i++) {
-        html += `<div class="cal-cell empty"></div>`;
-    }
-
-    for (let day = 1; day <= daysInMonth; day++) {
-        const dateKey = `${calViewYear}-${String(calViewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const isChecked = checkedSet.has(dateKey);
-        const isToday = dateKey === todayKey;
-
-        if (isChecked) checkedThisMonth++;
-
-        const classes = ['cal-cell'];
-        if (isChecked) classes.push('checked');
-        if (isToday) classes.push('today');
-
-        html += `
-            <div class="${classes.join(' ')}">
-                <span>${day}</span>
-                ${isChecked ? '<i class="fa-solid fa-check"></i>' : ''}
-            </div>
-        `;
-    }
-
-    grid.innerHTML = html;
-    const summaryEl = document.getElementById('cal-month-summary');
-    if (summaryEl) summaryEl.textContent = `เช็กอินเดือนนี้ ${checkedThisMonth} วัน`;
-}
-
-// วงล้อสุ่มแต้มลุ้นโชค (Lucky Spin)
-function syncWheelLabelsUI() {
-    const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
-    const labels = cfg.labels || cfg.prizes.map(p => (p > 0 ? `+${p} แต้ม` : 'ไม่ได้แต้ม'));
-
-    for (let i = 0; i < 6; i++) {
-        const lbl = document.getElementById(`wheel-lbl-${i}`);
-        if (lbl) {
-            lbl.textContent = labels[i] || '';
-        }
-    }
-
-    const openBtn = document.getElementById('btn-open-lucky-spin');
-    if (openBtn) {
-        openBtn.style.display = cfg.enabled ? 'inline-flex' : 'none';
-    }
-
-    const descEl = document.getElementById('spin-desc-text');
-    if (descEl) {
-        const rewardListText = labels.filter((v, idx, arr) => arr.indexOf(v) === idx).join(' / ');
-        descEl.innerHTML = cfg.cost > 0
-            ? `ใช้ <strong>${cfg.cost} แต้ม</strong> ต่อการหมุน 1 ครั้ง<br><small style="color:var(--primary-blue);">รางวัลในวงล้อ: ${escapeHTML(rewardListText)}</small>`
-            : `หมุนวงล้อ<strong>ฟรี!</strong><br><small style="color:var(--primary-blue);">รางวัลในวงล้อ: ${escapeHTML(rewardListText)}</small>`;
-    }
-
-    const spinNowBtn = document.getElementById('btn-spin-now');
-    if (spinNowBtn && !isSpinning) {
-        spinNowBtn.innerHTML = cfg.cost > 0
-            ? `<i class="fa-solid fa-play"></i> หมุนวงล้อเลย! (ใช้ ${cfg.cost} แต้ม)`
-            : `<i class="fa-solid fa-play"></i> หมุนวงล้อฟรีเลย!`;
-    }
-}
-
-function openLuckySpinModal() {
-    if (!currentUser) return;
-    syncWheelLabelsUI();
-    document.getElementById('spin-user-points').textContent = (Number(currentUser.points) || 0).toLocaleString();
-    document.getElementById('spin-result-box').textContent = '';
-    document.getElementById('spin-modal')?.classList.remove('hidden');
-}
-
-async function handleSpinWheel() {
-    if (!currentUser || isSpinning) return;
-
-    const ok = await syncFromCloud();
-    if (!ok) return;
-
-    const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
-    if (!cfg.enabled) {
-        showToast('วงล้อลุ้นแต้มปิดให้บริการชั่วคราว');
-        closeModal('spin-modal');
-        return;
-    }
-
-    const spinCost = Math.max(0, Number(cfg.cost) || 0);
-    const latestUser = db.users.find(u => String(u.id) === String(currentUser.id));
-    const currentPts = latestUser ? Number(latestUser.points) || 0 : 0;
-
-    if (!latestUser || currentPts < spinCost) {
-        showToast(`แต้มไม่พอหมุนวงล้อ (ต้องใช้ ${spinCost} แต้ม)`);
-        return;
-    }
-
-    const prizes = cfg.prizes.map(p => Math.max(0, Number(p) || 0));
-    const labels = cfg.labels || prizes.map(p => (p > 0 ? `+${p} แต้ม` : 'ไม่ได้แต้ม'));
-    const weights = cfg.weights.map(w => Math.max(0, Number(w) || 0));
-    const totalWeight = weights.reduce((a, b) => a + b, 0);
-
-    if (totalWeight <= 0) {
-        showToast('ยังไม่ได้กำหนดโอกาสออกรางวัลในวงล้อ กรุณาติดต่อแอดมิน');
-        return;
-    }
-
-    isSpinning = true;
-    const btn = document.getElementById('btn-spin-now');
-    const resultBox = document.getElementById('spin-result-box');
-    const wheel = document.getElementById('lucky-wheel');
-
-    if (btn) btn.disabled = true;
-    if (resultBox) {
-        resultBox.style.color = 'var(--primary-blue)';
-        resultBox.textContent = 'กำลังหมุนลุ้นรางวัล...';
-    }
-
-    let rand = Math.random() * totalWeight;
-    let chosenIdx = 0;
-
-    for (let i = 0; i < weights.length; i++) {
-        if (weights[i] > 0 && rand < weights[i]) {
-            chosenIdx = i;
-            break;
-        }
-        rand -= weights[i];
-    }
-
-    const wonPoints = prizes[chosenIdx];
-    const wonLabel = labels[chosenIdx];
-    const sliceCenterAngle = chosenIdx * 60 + 30;
-    const targetMod = (360 - sliceCenterAngle) % 360;
-    const currentMod = ((currentWheelRotation % 360) + 360) % 360;
-    const delta = (targetMod - currentMod + 360) % 360;
-
-    currentWheelRotation += 1800 + delta;
-    if (wheel) {
-        wheel.style.transform = `rotate(${currentWheelRotation}deg)`;
-    }
-
-    const netPoints = Math.max(0, currentPts - spinCost + wonPoints);
-    const netDelta = netPoints - currentPts;
-
-    setTimeout(async () => {
-        try {
-            const [updRes, insRes] = await Promise.all([
-                sb.from('users').update({ points: netPoints }).eq('id', latestUser.id),
-                sb.from('point_history').insert([{
-                    user_id: latestUser.id,
-                    amount: 0,
-                    points_earned: netDelta,
-                    note: `หมุนวงล้อลุ้นโชค (ใช้ ${spinCost} แต้ม ➔ ได้รับ "${wonLabel}")`
-                }])
-            ]);
-
-            if (updRes.error || insRes.error) {
-                throw new Error(updRes.error?.message || insRes.error?.message || 'Spin update failed');
-            }
-
-            await syncFromCloud();
-            renderMemberDashboard();
-
-            const ptsEl = document.getElementById('spin-user-points');
-            if (ptsEl) ptsEl.textContent = netPoints.toLocaleString();
-
-            const isNoPrize = wonPoints === 0 && (wonLabel.includes('ไม่ได้') || wonLabel.includes('เกลือ') || wonLabel.includes('เสียใจ'));
-            if (resultBox) {
-                if (!isNoPrize) {
-                    resultBox.style.color = 'var(--success-green)';
-                    resultBox.innerHTML = `<i class="fa-solid fa-sparkles"></i> ยินดีด้วย! คุณได้รับ "${escapeHTML(wonLabel)}"`;
-                    showToast(`หมุนวงล้อได้รับ "${wonLabel}"!`);
-                } else {
-                    resultBox.style.color = 'var(--danger-red)';
-                    resultBox.textContent = `ผลการหมุน: ${wonLabel} ลองใหม่อีกครั้งนะ!`;
-                    showToast(`${wonLabel} ลองใหม่อีกครั้งนะครับ`);
-                }
-            }
-        } catch (err) {
-            console.error('Spin settlement error:', err);
-            showToast('บันทึกผลวงล้อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
-            if (resultBox) {
-                resultBox.style.color = 'var(--danger-red)';
-                resultBox.textContent = 'เกิดข้อผิดพลาดในการบันทึกผล';
-            }
-        } finally {
-            isSpinning = false;
-            if (btn) btn.disabled = false;
-            syncWheelLabelsUI();
-        }
-    }, 3600);
 }
 
 function openTicketModal(redemptionId) {
@@ -1142,8 +756,6 @@ function renderMemberDashboard() {
         tierNext.textContent = tier.nextText;
     }
 
-    updateCheckinButtonUI();
-    syncWheelLabelsUI();
     generateMemberBarcode(currentUser.student_id || currentUser.username || String(currentUser.id));
     renderMemberPointsGoal();
     renderMemberPromotions();
@@ -1411,42 +1023,6 @@ function renderMemberHistory() {
             </tr>
         `;
     }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการแลกของรางวัล</td></tr>';
-
-    const spinTbody = document.getElementById('mem-spin-tbody');
-    if (spinTbody) {
-        const mySpins = db.point_history.filter(h =>
-            String(h.user_id) === String(currentUser.id) &&
-            String(h.note || '').startsWith('หมุนวงล้อลุ้นโชค')
-        );
-
-        spinTbody.innerHTML = mySpins.length ? mySpins.map(item => {
-            const parsed = parseSpinHistoryRecord(item);
-            const netDisplay = parsed.netDelta > 0
-                ? `<strong style="color:var(--success-green);">+${parsed.netDelta} แต้ม</strong>`
-                : parsed.netDelta < 0
-                    ? `<strong style="color:var(--danger-red);">${parsed.netDelta} แต้ม</strong>`
-                    : `<span style="color:var(--text-muted);">0 แต้ม</span>`;
-
-            const rewardBadge = parsed.isNoPrize
-                ? `<span class="status-pill status-rejected">${escapeHTML(parsed.prizeLabel)}</span>`
-                : `<span class="status-pill status-approved"><i class="fa-solid fa-gift"></i> ${escapeHTML(parsed.prizeLabel)}</span>`;
-
-            return `
-                <tr>
-                    <td><strong>${formatSpinTicketCode(item.id)}</strong></td>
-                    <td>${formatDateTime(item.created_at)}</td>
-                    <td>${rewardBadge}</td>
-                    <td>${parsed.cost} แต้ม</td>
-                    <td>${netDisplay}</td>
-                    <td>
-                        <button type="button" class="btn btn-outline-sm" onclick="openSpinTicketModal(${Number(item.id)})">
-                            <i class="fa-solid fa-ticket"></i> ดูหลักฐาน
-                        </button>
-                    </td>
-                </tr>
-            `;
-        }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการหมุนวงล้อ</td></tr>';
-    }
 }
 
 // ==========================================================
@@ -1508,119 +1084,13 @@ function renderAdminDashboard() {
 
     document.getElementById('setting-baht-per-point').value = db.settings.baht_per_point;
 
-    renderSpinSettingsForm();
     renderPOSMemberSelect();
     renderRecentPOS();
     renderAdminRedemptions();
-    renderAdminSpinHistory();
     renderAdminPromotions();
     renderAdminMembers();
     renderAdminRewards();
     renderAdminReports();
-}
-
-// --- ตั้งค่ารางวัลในวงล้อลุ้นแต้ม (Admin) ---
-function updateSpinWeightSummary() {
-    let total = 0;
-    for (let i = 0; i < 6; i++) {
-        total += Math.max(0, Number(document.getElementById(`spin-weight-${i}`)?.value) || 0);
-    }
-    const badge = document.getElementById('spin-total-weight-badge');
-    if (!badge) return;
-
-    badge.textContent = `ผลรวมโอกาสออกรางวัล: ${total}%`;
-    if (total === 100) {
-        badge.style.background = '#DCFCE7';
-        badge.style.color = '#166534';
-    } else {
-        badge.style.background = '#FEE2E2';
-        badge.style.color = '#991B1B';
-    }
-}
-
-function resetSpinSettingsDefault() {
-    if (!confirm('ต้องการคืนค่าการตั้งค่าวงล้อกลับเป็นค่าเริ่มต้นหรือไม่?')) return;
-    document.getElementById('spin-cfg-enabled').value = '1';
-    document.getElementById('spin-cfg-cost').value = DEFAULT_SPIN_CONFIG.cost;
-    for (let i = 0; i < 6; i++) {
-        const lblEl = document.getElementById(`spin-label-${i}`);
-        if (lblEl) lblEl.value = DEFAULT_SPIN_CONFIG.labels[i];
-        document.getElementById(`spin-prize-${i}`).value = DEFAULT_SPIN_CONFIG.prizes[i];
-        document.getElementById(`spin-weight-${i}`).value = DEFAULT_SPIN_CONFIG.weights[i];
-    }
-    updateSpinWeightSummary();
-    showToast('คืนค่าเริ่มต้นในฟอร์มแล้ว กด "บันทึกการตั้งค่าวงล้อ" เพื่อยืนยัน');
-}
-
-function renderSpinSettingsForm() {
-    const cfg = db.settings.spin_config || DEFAULT_SPIN_CONFIG;
-    const labels = cfg.labels || cfg.prizes.map(p => (p > 0 ? `+${p} แต้ม` : 'ไม่ได้แต้ม'));
-    const enabledEl = document.getElementById('spin-cfg-enabled');
-    const costEl = document.getElementById('spin-cfg-cost');
-    if (enabledEl) enabledEl.value = cfg.enabled ? '1' : '0';
-    if (costEl) costEl.value = cfg.cost;
-
-    for (let i = 0; i < 6; i++) {
-        const labelInput = document.getElementById(`spin-label-${i}`);
-        const prizeInput = document.getElementById(`spin-prize-${i}`);
-        const weightInput = document.getElementById(`spin-weight-${i}`);
-        if (labelInput) labelInput.value = labels[i] ?? '';
-        if (prizeInput) prizeInput.value = cfg.prizes[i];
-        if (weightInput) weightInput.value = cfg.weights[i];
-    }
-    updateSpinWeightSummary();
-}
-
-async function handleSaveSpinSettings(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btn-save-spin-cfg');
-    const enabled = document.getElementById('spin-cfg-enabled').value === '1';
-    const cost = Math.max(0, parseInt(document.getElementById('spin-cfg-cost').value, 10) || 0);
-
-    const labels = [];
-    const prizes = [];
-    const weights = [];
-    let totalWeight = 0;
-
-    for (let i = 0; i < 6; i++) {
-        const prizeVal = Math.max(0, parseInt(document.getElementById(`spin-prize-${i}`).value, 10) || 0);
-        const rawLabel = (document.getElementById(`spin-label-${i}`)?.value || '').trim();
-        const labelVal = rawLabel || (prizeVal > 0 ? `+${prizeVal} แต้ม` : 'ไม่ได้แต้ม');
-        const weightVal = Math.max(0, parseFloat(document.getElementById(`spin-weight-${i}`).value) || 0);
-
-        labels.push(labelVal);
-        prizes.push(prizeVal);
-        weights.push(weightVal);
-        totalWeight += weightVal;
-    }
-
-    if (totalWeight !== 100) {
-        showToast(`ผลรวมโอกาสออกรางวัลทั้ง 6 ช่องต้องเท่ากับ 100% (ปัจจุบันรวมได้ ${totalWeight}%)`);
-        return;
-    }
-
-    const newConfig = { enabled, cost, labels, prizes, weights };
-
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก...';
-
-    const { error } = await sb.from('settings').upsert({
-        setting_key: 'lucky_spin_config',
-        setting_value: JSON.stringify(newConfig)
-    }, { onConflict: 'setting_key' });
-
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าวงล้อ';
-
-    if (error) {
-        console.error('Save spin settings error:', error);
-        showToast('บันทึกไม่สำเร็จ: กรุณาตรวจสอบสิทธิ์ตาราง settings ใน Supabase');
-        return;
-    }
-
-    await syncFromCloud();
-    renderSpinSettingsForm();
-    showToast('บันทึกการตั้งค่าวงล้อลุ้นแต้มเรียบร้อยแล้ว!');
 }
 
 // --- ส่วนบันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS) ---
@@ -1829,86 +1299,6 @@ function renderAdminRedemptions() {
             </tr>
         `;
     }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการแลกของรางวัล</td></tr>';
-}
-
-// --- ส่วนแสดงประวัติการหมุนวงล้อและรางวัลวงล้อทั้งหมด (Admin) ---
-function renderAdminSpinHistory() {
-    const tbody = document.getElementById('admin-spins-tbody');
-    const kpiBox = document.getElementById('admin-spin-kpi');
-    if (!tbody) return;
-
-    const allSpins = db.point_history.filter(h => String(h.note || '').startsWith('หมุนวงล้อลุ้นโชค'));
-
-    if (kpiBox) {
-        let totalCost = 0;
-        let totalNetDelta = 0;
-        allSpins.forEach(item => {
-            const p = parseSpinHistoryRecord(item);
-            totalCost += p.cost;
-            totalNetDelta += p.netDelta;
-        });
-        const totalPointsAwarded = totalNetDelta + totalCost;
-
-        kpiBox.innerHTML = `
-            <div class="report-kpi-box">
-                <span>จำนวนการหมุนวงล้อทั้งหมด</span>
-                <strong>${allSpins.length.toLocaleString()} ครั้ง</strong>
-                <small>สะสมตั้งแต่เปิดใช้งาน</small>
-            </div>
-            <div class="report-kpi-box">
-                <span>แต้มที่สมาชิกใช้หมุนรวม</span>
-                <strong style="color: #D97706;">${totalCost.toLocaleString()} แต้ม</strong>
-                <small>หักจากกระเป๋าสมาชิก</small>
-            </div>
-            <div class="report-kpi-box">
-                <span>แต้มรางวัลที่แจกออกรวม</span>
-                <strong style="color: #16A34A;">+${Math.max(0, totalPointsAwarded).toLocaleString()} แต้ม</strong>
-                <small>รวมรางวัลแต้มจากวงล้อ</small>
-            </div>
-        `;
-    }
-
-    const keyword = (document.getElementById('admin-spin-search')?.value || '').toLowerCase().trim();
-    const filteredSpins = allSpins.filter(item => {
-        if (!keyword) return true;
-        const user = db.users.find(u => String(u.id) === String(item.user_id));
-        const parsed = parseSpinHistoryRecord(item);
-        const ticketCode = formatSpinTicketCode(item.id).toLowerCase();
-        return (
-            ticketCode.includes(keyword) ||
-            parsed.prizeLabel.toLowerCase().includes(keyword) ||
-            (user && (
-                String(user.full_name || '').toLowerCase().includes(keyword) ||
-                String(user.student_id || '').toLowerCase().includes(keyword)
-            ))
-        );
-    });
-
-    tbody.innerHTML = filteredSpins.length ? filteredSpins.map(item => {
-        const user = db.users.find(u => String(u.id) === String(item.user_id));
-        const parsed = parseSpinHistoryRecord(item);
-
-        const netDisplay = parsed.netDelta > 0
-            ? `<strong style="color:var(--success-green);">+${parsed.netDelta} แต้ม</strong>`
-            : parsed.netDelta < 0
-                ? `<strong style="color:var(--danger-red);">${parsed.netDelta} แต้ม</strong>`
-                : `<span style="color:var(--text-muted);">0 แต้ม</span>`;
-
-        const rewardBadge = parsed.isNoPrize
-            ? `<span class="status-pill status-rejected">${escapeHTML(parsed.prizeLabel)}</span>`
-            : `<span class="status-pill status-approved"><i class="fa-solid fa-trophy"></i> ${escapeHTML(parsed.prizeLabel)}</span>`;
-
-        return `
-            <tr>
-                <td><strong>${formatSpinTicketCode(item.id)}</strong></td>
-                <td>${formatDateTime(item.created_at)}</td>
-                <td>${user ? `${escapeHTML(user.full_name)} (${escapeHTML(user.student_id || '-')})` : 'ไม่พบสมาชิก'}</td>
-                <td>${rewardBadge}</td>
-                <td>${parsed.cost} แต้ม</td>
-                <td>${netDisplay}</td>
-            </tr>
-        `;
-    }).join('') : '<tr><td colspan="6" style="text-align:center;">ไม่พบประวัติการหมุนวงล้อ</td></tr>';
 }
 
 // ==========================================================
