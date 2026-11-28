@@ -1,6 +1,6 @@
 /* ==========================================================
-   ระบบบริหารจัดการแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Barcode + POS + Tier + Audit Log)
+   ระบบ POS คาเฟ่ & สะสมแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Touch POS + Menu CRUD + Loyalty)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -15,6 +15,7 @@ let db = {
         welcome_bonus: 5
     },
     users: [],
+    products: [],
     rewards: [],
     point_history: [],
     redemptions: [],
@@ -29,6 +30,10 @@ let promoSlideIndex = 0;
 let promoSlideTimer = null;
 let realtimeChannel = null;
 
+// สถานะหน้าขาย POS คาเฟ่
+let posSelectedCategory = 'ทั้งหมด';
+let posCart = []; // [{ id, name, price, qty }]
+
 function escapeHTML(str) {
     return String(str ?? '')
         .replace(/&/g, '&amp;')
@@ -41,8 +46,9 @@ function escapeHTML(str) {
 // โหลดข้อมูลล่าสุดทั้งหมดจาก Supabase
 async function syncFromCloud() {
     try {
-        const [usersRes, rewardsRes, historyRes, redeemRes, promoRes, settingsRes] = await Promise.all([
+        const [usersRes, productsRes, rewardsRes, historyRes, redeemRes, promoRes, settingsRes] = await Promise.all([
             sb.from('users').select('*').order('id', { ascending: true }),
+            sb.from('products').select('*').order('id', { ascending: true }),
             sb.from('rewards').select('*').order('id', { ascending: true }),
             sb.from('point_history').select('*').order('id', { ascending: false }),
             sb.from('redemptions').select('*').order('id', { ascending: false }),
@@ -58,6 +64,7 @@ async function syncFromCloud() {
         if (settingsRes.error) throw settingsRes.error;
 
         db.users = usersRes.data || [];
+        db.products = productsRes.data || [];
         db.rewards = rewardsRes.data || [];
         db.point_history = historyRes.data || [];
         db.redemptions = redeemRes.data || [];
@@ -90,7 +97,7 @@ async function syncFromCloud() {
         return true;
     } catch (err) {
         console.error('Supabase Sync Error:', err);
-        showToast('เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล');
+        showToast('เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล (ตรวจสอบว่าสร้างตาราง products แล้วหรือยัง)');
         return false;
     }
 }
@@ -145,7 +152,6 @@ function getLocalDateKey(isoString) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// คำนวณระดับสมาชิก (Member Tier) 4 ระดับ: MEMBER (0) -> SILVER (50) -> GOLD (150) -> PLATINUM (300)
 function getMemberTierInfo(userId, currentPoints = 0) {
     const earnedSum = db.point_history
         .filter(h => String(h.user_id) === String(userId) && Number(h.points_earned) > 0)
@@ -153,29 +159,13 @@ function getMemberTierInfo(userId, currentPoints = 0) {
 
     const lifetimePoints = Math.max(earnedSum, Number(currentPoints) || 0);
 
-    let barPercent = 0;
-    if (lifetimePoints >= 300) {
-        barPercent = 100;
-    } else if (lifetimePoints >= 150) {
-        barPercent = 66.66 + ((lifetimePoints - 150) / 150) * 33.34;
-    } else if (lifetimePoints >= 50) {
-        barPercent = 33.33 + ((lifetimePoints - 50) / 100) * 33.33;
-    } else {
-        barPercent = (lifetimePoints / 50) * 33.33;
-    }
-    barPercent = Math.max(0, Math.min(100, Math.round(barPercent)));
-
     if (lifetimePoints >= 300) {
         return {
             name: 'PLATINUM',
             label: 'ระดับ PLATINUM',
             cssClass: 'tier-platinum',
-            fillClass: 'fill-platinum',
             icon: 'fa-gem',
-            lifetimePoints,
-            barPercent: 100,
-            nextText: `ระดับสูงสุด PLATINUM (สะสมรวม ${lifetimePoints} แต้ม)`,
-            goalShortText: `ถึงระดับสูงสุด PLATINUM แล้ว (${lifetimePoints} แต้ม)`
+            nextText: `ระดับสูงสุด PLATINUM (สะสมรวม ${lifetimePoints} แต้ม)`
         };
     } else if (lifetimePoints >= 150) {
         const diff = 300 - lifetimePoints;
@@ -183,12 +173,8 @@ function getMemberTierInfo(userId, currentPoints = 0) {
             name: 'GOLD',
             label: 'ระดับ GOLD',
             cssClass: 'tier-gold',
-            fillClass: 'fill-gold',
             icon: 'fa-crown',
-            lifetimePoints,
-            barPercent,
-            nextText: `อีก ${diff} แต้ม ขึ้นระดับ PLATINUM`,
-            goalShortText: `อีก ${diff} แต้ม ➔ PLATINUM`
+            nextText: `อีก ${diff} แต้ม ขึ้นระดับ PLATINUM`
         };
     } else if (lifetimePoints >= 50) {
         const diff = 150 - lifetimePoints;
@@ -196,12 +182,8 @@ function getMemberTierInfo(userId, currentPoints = 0) {
             name: 'SILVER',
             label: 'ระดับ SILVER',
             cssClass: 'tier-silver',
-            fillClass: 'fill-silver',
             icon: 'fa-award',
-            lifetimePoints,
-            barPercent,
-            nextText: `อีก ${diff} แต้ม ขึ้นระดับ GOLD`,
-            goalShortText: `อีก ${diff} แต้ม ➔ GOLD`
+            nextText: `อีก ${diff} แต้ม ขึ้นระดับ GOLD`
         };
     } else {
         const diff = 50 - lifetimePoints;
@@ -209,12 +191,8 @@ function getMemberTierInfo(userId, currentPoints = 0) {
             name: 'MEMBER',
             label: 'ระดับ MEMBER',
             cssClass: 'tier-member',
-            fillClass: '',
             icon: 'fa-medal',
-            lifetimePoints,
-            barPercent,
-            nextText: `อีก ${diff} แต้ม ขึ้นระดับ SILVER`,
-            goalShortText: `อีก ${diff} แต้ม ➔ SILVER`
+            nextText: `อีก ${diff} แต้ม ขึ้นระดับ SILVER`
         };
     }
 }
@@ -325,11 +303,10 @@ function applyLoggedInUI(user, rememberMe = null) {
     document.getElementById('nav-user-name').textContent = user.full_name;
 
     if (user.role === 'admin') {
-        document.getElementById('nav-user-role').textContent = 'ผู้ดูแลร้าน';
+        document.getElementById('nav-user-role').textContent = 'แคชเชียร์ / ผู้ดูแล';
         document.getElementById('member-dashboard')?.classList.add('hidden');
         document.getElementById('admin-dashboard')?.classList.remove('hidden');
         renderAdminDashboard();
-        focusPOSBarcodeInput();
     } else {
         document.getElementById('nav-user-role').textContent = 'สมาชิก';
         document.getElementById('admin-dashboard')?.classList.add('hidden');
@@ -1026,35 +1003,8 @@ function renderMemberHistory() {
 }
 
 // ==========================================================
-// 2. ระบบผู้ดูแลร้าน (Admin Functions & Barcode POS Scanner)
+// 2. ระบบผู้ดูแลร้าน & หน้าขาย POS คาเฟ่ (Cafe Touch POS + Cart)
 // ==========================================================
-function focusPOSBarcodeInput() {
-    setTimeout(() => {
-        const searchInput = document.getElementById('pos-member-search');
-        if (searchInput) searchInput.focus();
-    }, 100);
-}
-
-function clearPOSMember() {
-    const searchInput = document.getElementById('pos-member-search');
-    const hiddenId = document.getElementById('pos-selected-user-id');
-    const statusBox = document.getElementById('pos-member-status');
-
-    if (searchInput) {
-        searchInput.value = '';
-        searchInput.focus();
-    }
-    if (hiddenId) hiddenId.value = '';
-    if (statusBox) statusBox.innerHTML = '';
-}
-
-function handlePOSBarcodeKeydown(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        handlePOSMemberSearch(true);
-    }
-}
-
 async function switchAdminTab(tabName, btnElement) {
     document.querySelectorAll('#admin-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('#admin-dashboard .tab-content').forEach(c => c.classList.remove('active'));
@@ -1064,10 +1014,6 @@ async function switchAdminTab(tabName, btnElement) {
 
     await syncFromCloud();
     renderAdminDashboard();
-
-    if (tabName === 'pos') {
-        focusPOSBarcodeInput();
-    }
 }
 
 function renderAdminDashboard() {
@@ -1082,10 +1028,13 @@ function renderAdminDashboard() {
     document.getElementById('stat-total-redemptions').textContent = db.redemptions.length.toLocaleString();
     document.getElementById('stat-total-sales').textContent = totalSales.toLocaleString();
 
-    document.getElementById('setting-baht-per-point').value = db.settings.baht_per_point;
+    const rateInput = document.getElementById('setting-baht-per-point');
+    if (rateInput) rateInput.value = db.settings.baht_per_point;
 
     renderPOSMemberSelect();
-    renderRecentPOS();
+    renderPOSCafeMenu();
+    renderPOSCart();
+    renderAdminProducts();
     renderAdminRedemptions();
     renderAdminPromotions();
     renderAdminMembers();
@@ -1093,7 +1042,212 @@ function renderAdminDashboard() {
     renderAdminReports();
 }
 
-// --- ส่วนบันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS) ---
+// --- หน้าขาย POS คาเฟ่: แสดงปุ่มเมนู & จัดการตะกร้า ---
+function selectPOSCategory(cat) {
+    posSelectedCategory = cat;
+    renderPOSCafeMenu();
+}
+
+function renderPOSCafeMenu() {
+    const catBar = document.getElementById('pos-category-tabs');
+    const grid = document.getElementById('pos-menu-grid');
+    if (!catBar || !grid) return;
+
+    const availableProducts = (db.products || []).filter(p => p.is_available !== false);
+
+    // สร้างแถบหมวดหมู่
+    const categories = ['ทั้งหมด', ...new Set(availableProducts.map(p => p.category || 'อื่นๆ'))];
+    if (!categories.includes(posSelectedCategory)) {
+        posSelectedCategory = 'ทั้งหมด';
+    }
+
+    catBar.innerHTML = categories.map(cat => `
+        <button type="button" class="pos-cat-btn ${posSelectedCategory === cat ? 'active' : ''}" onclick="selectPOSCategory('${escapeHTML(cat)}')">
+            ${escapeHTML(cat)}
+        </button>
+    `).join('');
+
+    // กรองเมนูตามหมวดหมู่ที่เลือก
+    const filtered = posSelectedCategory === 'ทั้งหมด'
+        ? availableProducts
+        : availableProducts.filter(p => (p.category || 'อื่นๆ') === posSelectedCategory);
+
+    if (!filtered.length) {
+        grid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 36px 16px; color: var(--text-muted);">
+                <i class="fa-solid fa-mug-saucer" style="font-size: 32px; margin-bottom: 8px; display: block;"></i>
+                ยังไม่มีเมนูในหมวดนี้ กดปุ่ม <strong>"+ เพิ่มเมนูใหม่"</strong> ด้านบนเพื่อเพิ่มรายการได้เลย
+            </div>
+        `;
+        return;
+    }
+
+    grid.innerHTML = filtered.map(prod => {
+        const cartItem = posCart.find(c => String(c.id) === String(prod.id));
+        const qtyInCart = cartItem ? cartItem.qty : 0;
+        const price = Number(prod.price) || 0;
+
+        return `
+            <button type="button" class="pos-menu-btn ${qtyInCart > 0 ? 'in-cart' : ''}" onclick="addToPOSCart(${Number(prod.id)})">
+                ${qtyInCart > 0 ? `<span class="pos-menu-qty-badge">${qtyInCart}</span>` : ''}
+                <span class="pos-menu-cat-tag">${escapeHTML(prod.category || 'เมนูร้าน')}</span>
+                <div class="pos-menu-name">${escapeHTML(prod.name)}</div>
+                <div class="pos-menu-price">${price.toLocaleString()} ฿</div>
+            </button>
+        `;
+    }).join('');
+}
+
+function addToPOSCart(productId) {
+    const product = db.products.find(p => String(p.id) === String(productId));
+    if (!product) return;
+
+    const existing = posCart.find(c => String(c.id) === String(productId));
+    if (existing) {
+        existing.qty += 1;
+    } else {
+        posCart.push({
+            id: product.id,
+            name: product.name,
+            price: Number(product.price) || 0,
+            qty: 1
+        });
+    }
+
+    renderPOSCafeMenu();
+    renderPOSCart();
+}
+
+function changePOSCartQty(productId, delta) {
+    const idx = posCart.findIndex(c => String(c.id) === String(productId));
+    if (idx === -1) return;
+
+    posCart[idx].qty += delta;
+    if (posCart[idx].qty <= 0) {
+        posCart.splice(idx, 1);
+    }
+
+    renderPOSCafeMenu();
+    renderPOSCart();
+}
+
+function clearPOSCart() {
+    posCart = [];
+    const cashInput = document.getElementById('pos-cash-received');
+    const noteInput = document.getElementById('pos-note');
+    if (cashInput) cashInput.value = '';
+    if (noteInput) noteInput.value = '';
+    renderPOSCafeMenu();
+    renderPOSCart();
+}
+
+function getPOSTotalAmount() {
+    return posCart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+}
+
+function renderPOSCart() {
+    const container = document.getElementById('pos-cart-items');
+    if (!container) return;
+
+    if (!posCart.length) {
+        container.innerHTML = `
+            <div class="pos-empty-cart">
+                <i class="fa-solid fa-hand-pointer"></i>
+                <p>คลิกเลือกเมนูทางฝั่งซ้ายเพื่อเพิ่มรายการสั่งซื้อ</p>
+            </div>
+        `;
+    } else {
+        container.innerHTML = posCart.map(item => `
+            <div class="pos-cart-row">
+                <div class="pos-cart-info">
+                    <strong>${escapeHTML(item.name)}</strong>
+                    <small>${item.price.toLocaleString()} ฿ / รายการ</small>
+                </div>
+                <div class="pos-qty-controls">
+                    <button type="button" class="btn-qty" onclick="changePOSCartQty(${Number(item.id)}, -1)">-</button>
+                    <span class="pos-qty-val">${item.qty}</span>
+                    <button type="button" class="btn-qty" onclick="changePOSCartQty(${Number(item.id)}, 1)">+</button>
+                </div>
+                <div class="pos-row-subtotal">${(item.price * item.qty).toLocaleString()} ฿</div>
+            </div>
+        `).join('');
+    }
+
+    const totalQty = posCart.reduce((sum, item) => sum + item.qty, 0);
+    const totalAmount = getPOSTotalAmount();
+    const rate = Math.max(1, parseInt(db.settings.baht_per_point, 10) || 20);
+    const hasMember = Boolean(document.getElementById('pos-selected-user-id')?.value);
+    const pointsEarned = (hasMember && totalAmount > 0) ? Math.floor(totalAmount / rate) : 0;
+
+    document.getElementById('pos-total-qty').textContent = `${totalQty} รายการ`;
+    document.getElementById('pos-total-amount').textContent = `${totalAmount.toLocaleString()} ฿`;
+    document.getElementById('pos-preview-points').textContent = hasMember
+        ? `+${pointsEarned} แต้ม`
+        : 'ไม่ระบุสมาชิก (0 แต้ม)';
+
+    calculatePOSChange();
+}
+
+function setExactCash() {
+    const total = getPOSTotalAmount();
+    const input = document.getElementById('pos-cash-received');
+    if (input) {
+        input.value = total;
+        calculatePOSChange();
+    }
+}
+
+function addCashReceived(amount) {
+    const input = document.getElementById('pos-cash-received');
+    if (input) {
+        const current = parseFloat(input.value) || 0;
+        input.value = current + amount;
+        calculatePOSChange();
+    }
+}
+
+function calculatePOSChange() {
+    const total = getPOSTotalAmount();
+    const cashInput = document.getElementById('pos-cash-received');
+    const changeEl = document.getElementById('pos-change-amount');
+    if (!changeEl) return;
+
+    const rawCash = cashInput?.value.trim();
+    if (!rawCash) {
+        changeEl.textContent = '0 ฿';
+        changeEl.style.color = 'var(--text-muted)';
+        return;
+    }
+
+    const cash = parseFloat(rawCash) || 0;
+    const diff = cash - total;
+    if (diff >= 0) {
+        changeEl.textContent = `${diff.toLocaleString()} ฿`;
+        changeEl.style.color = 'var(--success-green)';
+    } else {
+        changeEl.textContent = `ขาดอีก ${Math.abs(diff).toLocaleString()} ฿`;
+        changeEl.style.color = 'var(--danger-red)';
+    }
+}
+
+function clearPOSMember() {
+    const searchInput = document.getElementById('pos-member-search');
+    const hiddenId = document.getElementById('pos-selected-user-id');
+    const statusBox = document.getElementById('pos-member-status');
+
+    if (searchInput) searchInput.value = '';
+    if (hiddenId) hiddenId.value = '';
+    if (statusBox) statusBox.innerHTML = '';
+    renderPOSCart();
+}
+
+function handlePOSBarcodeKeydown(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        handlePOSMemberSearch(true);
+    }
+}
+
 function renderPOSMemberSelect() {
     const datalist = document.getElementById('pos-members-datalist');
     if (!datalist) return;
@@ -1128,117 +1282,245 @@ function handlePOSMemberSearch(fromScannerEnter = false) {
         const pts = Number(found.points) || 0;
         const tier = getMemberTierInfo(found.id, pts);
         statusBox.innerHTML = `
-            <div style="background: #DCFCE7; border: 1.5px solid #16A34A; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="background: #DCFCE7; border: 1.5px solid #16A34A; border-radius: 10px; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span style="font-size: 12px; color: #166534; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> พบข้อมูลสมาชิก (${escapeHTML(tier.name)})</span>
-                    <div style="font-size: 16px; font-weight: 700; color: #0F172A;">${escapeHTML(found.full_name)}</div>
-                    <small style="color: #334155;">เบอร์โทร: ${escapeHTML(found.student_id || '-')}</small>
+                    <span style="font-size: 11.5px; color: #166534; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> สมาชิก (${escapeHTML(tier.name)})</span>
+                    <div style="font-size: 14.5px; font-weight: 700; color: #0F172A;">${escapeHTML(found.full_name)} (${escapeHTML(found.student_id || '-')})</div>
                 </div>
                 <div style="text-align: right;">
-                    <span style="font-size: 11px; color: #166534;">แต้มสะสม</span>
-                    <div style="font-size: 22px; font-weight: 700; color: #1E3A8A;">${pts.toLocaleString()}</div>
+                    <span style="font-size: 11px; color: #166534;">แต้มเดิม</span>
+                    <div style="font-size: 18px; font-weight: 700; color: #1E3A8A;">${pts.toLocaleString()}</div>
                 </div>
             </div>
         `;
 
         if (fromScannerEnter || (cleanDigits.length === 10 && String(found.student_id).replace(/\D/g, '') === cleanDigits)) {
             searchInput.value = `${found.student_id || found.username} | ${found.full_name}`;
-            const amountInput = document.getElementById('pos-amount');
-            if (amountInput) {
-                amountInput.focus();
-                amountInput.select();
-            }
             if (fromScannerEnter) {
-                showToast(`สแกนพบคุณ ${found.full_name} กรอกยอดซื้อได้เลย`);
+                showToast(`พบข้อมูลสมาชิก: คุณ ${found.full_name}`);
             }
         }
     } else {
         hiddenId.value = '';
         if (input) {
-            statusBox.innerHTML = `<small style="color: var(--danger-red);"><i class="fa-solid fa-magnifying-glass"></i> ${fromScannerEnter ? 'ไม่พบข้อมูลบาร์โค้ดนี้ในระบบสมาชิก' : 'กำลังค้นหาสมาชิก...'}</small>`;
-            if (fromScannerEnter) {
-                showToast('ไม่พบข้อมูลบาร์โค้ดสมาชิกนี้ในระบบ');
-                searchInput.select();
-            }
+            statusBox.innerHTML = `<small style="color: var(--danger-red);"><i class="fa-solid fa-magnifying-glass"></i> ${fromScannerEnter ? 'ไม่พบข้อมูลสมาชิกนี้ในระบบ' : 'กำลังค้นหาสมาชิก...'}</small>`;
         } else {
             statusBox.innerHTML = '';
         }
     }
+
+    renderPOSCart();
 }
 
-function setQuickAmount(val) {
-    document.getElementById('pos-amount').value = val;
-    calculatePreviewPoints();
-}
-
-function calculatePreviewPoints() {
-    const amount = parseFloat(document.getElementById('pos-amount').value) || 0;
-    const rate = Math.max(1, parseInt(db.settings.baht_per_point, 10) || 20);
-    const earned = amount > 0 ? Math.floor(amount / rate) : 0;
-    document.getElementById('pos-preview-points').textContent = `${earned} แต้ม`;
-}
-
-async function handleRecordPurchase(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btn-pos-submit');
-    const userId = document.getElementById('pos-selected-user-id').value;
-    const amount = parseFloat(document.getElementById('pos-amount').value);
-    const note = document.getElementById('pos-note').value.trim();
-
-    if (!userId) {
-        showToast('ไม่พบข้อมูลสมาชิก กรุณายิงบาร์โค้ดหรือเลือกจากรายการ');
-        focusPOSBarcodeInput();
+async function handleCheckoutPOS() {
+    if (!posCart.length) {
+        showToast('กรุณาคลิกเลือกเมนูอย่างน้อย 1 รายการก่อนบันทึก');
         return;
     }
 
-    if (!Number.isFinite(amount) || amount <= 0) {
-        showToast('กรุณากรอกยอดซื้อให้ถูกต้อง');
+    const totalAmount = getPOSTotalAmount();
+    const rawCash = document.getElementById('pos-cash-received')?.value.trim();
+    if (rawCash) {
+        const cash = parseFloat(rawCash) || 0;
+        if (cash < totalAmount) {
+            showToast(`จำนวนเงินที่รับมาไม่พอขาดอีก ${(totalAmount - cash).toLocaleString()} บาท`);
+            return;
+        }
+    }
+
+    const btn = document.getElementById('btn-pos-checkout');
+    const userId = document.getElementById('pos-selected-user-id').value;
+    const customNote = document.getElementById('pos-note').value.trim();
+
+    // สร้างข้อความสรุปรายการที่สั่ง เช่น "ชาไทยเย็น x2, ขนมปังปิ้ง x1"
+    const itemsSummary = posCart.map(item => `${item.name} x${item.qty}`).join(', ');
+    const fullNote = customNote ? `${itemsSummary} (${customNote})` : itemsSummary;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึกออเดอร์...';
+    }
+
+    try {
+        const ok = await syncFromCloud();
+        if (!ok) return;
+
+        let member = null;
+        let pointsEarned = 0;
+
+        if (userId) {
+            member = db.users.find(u => String(u.id) === String(userId));
+            if (member) {
+                const rate = Math.max(1, parseInt(db.settings.baht_per_point, 10) || 20);
+                pointsEarned = Math.floor(totalAmount / rate);
+                const newPoints = (Number(member.points) || 0) + pointsEarned;
+
+                const updRes = await sb.from('users').update({ points: newPoints }).eq('id', member.id);
+                if (updRes.error) {
+                    showToast('เกิดข้อผิดพลาดในการเพิ่มแต้มสมาชิก');
+                    return;
+                }
+            }
+        }
+
+        // บันทึกประวัติยอดขายและรายการที่สั่งลง point_history (ถ้าไม่ได้เป็นสมาชิกใช้ user_id ของแอดมินแทนเพื่อเก็บยอดขาย)
+        const targetUserId = member ? member.id : currentUser.id;
+        const insRes = await sb.from('point_history').insert([{
+            user_id: targetUserId,
+            amount: totalAmount,
+            points_earned: member ? pointsEarned : 0,
+            note: member ? fullNote : `[ลูกค้าทั่วไป] ${fullNote}`
+        }]);
+
+        if (insRes.error) {
+            showToast('เกิดข้อผิดพลาดในการบันทึกออเดอร์');
+            return;
+        }
+
+        const changeText = rawCash ? ` | เงินทอน ${(parseFloat(rawCash) - totalAmount).toLocaleString()} บาท` : '';
+        clearPOSCart();
+        clearPOSMember();
+
+        await syncFromCloud();
+        renderAdminDashboard();
+
+        if (member) {
+            showToast(`บันทึกออเดอร์ ${totalAmount.toLocaleString()} ฿ สำเร็จ! คุณ ${member.full_name} รับ +${pointsEarned} แต้ม${changeText}`);
+        } else {
+            showToast(`บันทึกออเดอร์ลูกค้าทั่วไป ${totalAmount.toLocaleString()} ฿ สำเร็จ!${changeText}`);
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> ยืนยันรับเงิน & บันทึกออเดอร์';
+        }
+    }
+}
+
+// --- จัดการเมนูอาหารและเครื่องดื่มของร้าน (Product CRUD) ---
+function renderAdminProducts() {
+    const tbody = document.getElementById('admin-products-tbody');
+    if (!tbody) return;
+    const keyword = (document.getElementById('product-search')?.value || '').toLowerCase().trim();
+
+    const filtered = (db.products || []).filter(p =>
+        String(p.name || '').toLowerCase().includes(keyword) ||
+        String(p.category || '').toLowerCase().includes(keyword)
+    );
+
+    tbody.innerHTML = filtered.length ? filtered.map(p => {
+        const isAvail = p.is_available !== false;
+        return `
+            <tr>
+                <td><strong>${escapeHTML(p.name)}</strong></td>
+                <td>${escapeHTML(p.category || '-')}</td>
+                <td><strong>${(Number(p.price) || 0).toLocaleString()}</strong> บาท</td>
+                <td>
+                    ${isAvail
+                        ? '<span class="status-pill status-approved">พร้อมขาย</span>'
+                        : '<span class="status-pill status-rejected">หมดชั่วคราว</span>'}
+                </td>
+                <td>
+                    <button type="button" class="btn btn-outline-sm" onclick="openProductModal(${Number(p.id)})">
+                        <i class="fa-solid fa-pen"></i> แก้ไข
+                    </button>
+                    <button type="button" class="btn btn-danger" onclick="deleteProduct(${Number(p.id)})">
+                        <i class="fa-solid fa-trash"></i> ลบ
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('') : '<tr><td colspan="5" style="text-align:center;">ยังไม่มีรายการเมนู กด "+ เพิ่มเมนูใหม่" ด้านบน</td></tr>';
+}
+
+function openProductModal(productId = null) {
+    const modal = document.getElementById('product-modal');
+    const title = document.getElementById('product-modal-title');
+
+    if (productId) {
+        const p = db.products.find(item => String(item.id) === String(productId));
+        if (!p) return;
+        title.textContent = 'แก้ไขเมนูร้าน';
+        document.getElementById('edit-product-id').value = p.id;
+        document.getElementById('modal-prod-name').value = p.name;
+        document.getElementById('modal-prod-category').value = p.category || 'กาแฟ';
+        document.getElementById('modal-prod-price').value = Number(p.price) || 0;
+        document.getElementById('modal-prod-available').value = p.is_available !== false ? '1' : '0';
+    } else {
+        title.textContent = 'เพิ่มเมนูใหม่';
+        document.getElementById('edit-product-id').value = '';
+        document.getElementById('modal-prod-name').value = '';
+        document.getElementById('modal-prod-category').value = 'กาแฟ';
+        document.getElementById('modal-prod-price').value = '';
+        document.getElementById('modal-prod-available').value = '1';
+    }
+    modal?.classList.remove('hidden');
+}
+
+async function saveProduct(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save-product');
+    const id = document.getElementById('edit-product-id').value;
+    const name = document.getElementById('modal-prod-name').value.trim();
+    const category = document.getElementById('modal-prod-category').value.trim() || 'ทั่วไป';
+    const price = Math.max(0, parseFloat(document.getElementById('modal-prod-price').value) || 0);
+    const is_available = document.getElementById('modal-prod-available').value === '1';
+
+    if (!name) {
+        showToast('กรุณากรอกชื่อเมนู');
         return;
     }
 
     if (btn) btn.disabled = true;
 
     try {
-        const ok = await syncFromCloud();
-        if (!ok) return;
+        if (id) {
+            const { error } = await sb.from('products').update({
+                name,
+                category,
+                price,
+                is_available
+            }).eq('id', parseInt(id, 10));
 
-        const member = db.users.find(u => String(u.id) === String(userId));
-        if (!member) {
-            showToast('ไม่พบข้อมูลสมาชิกในระบบ');
-            return;
+            if (error) {
+                showToast('แก้ไขเมนูไม่สำเร็จ');
+                return;
+            }
+            showToast(`อัปเดตเมนู "${name}" เรียบร้อยแล้ว`);
+        } else {
+            const { error } = await sb.from('products').insert([{
+                name,
+                category,
+                price,
+                is_available
+            }]);
+
+            if (error) {
+                showToast('เพิ่มเมนูใหม่ไม่สำเร็จ');
+                return;
+            }
+            showToast(`เพิ่มเมนู "${name}" เรียบร้อยแล้ว`);
         }
 
-        const rate = Math.max(1, parseInt(db.settings.baht_per_point, 10) || 20);
-        const pointsEarned = Math.floor(amount / rate);
-        const newPoints = (Number(member.points) || 0) + pointsEarned;
-
-        const [updRes, insRes] = await Promise.all([
-            sb.from('users').update({ points: newPoints }).eq('id', member.id),
-            sb.from('point_history').insert([{
-                user_id: member.id,
-                amount: amount,
-                points_earned: pointsEarned,
-                note: note || 'ซื้อสินค้าหน้าร้าน'
-            }])
-        ]);
-
-        if (updRes.error || insRes.error) {
-            showToast('เกิดข้อผิดพลาดในการบันทึกยอดซื้อ');
-            return;
-        }
-
-        e.target.reset();
-        document.getElementById('pos-selected-user-id').value = '';
-        document.getElementById('pos-member-status').innerHTML = '';
-        document.getElementById('pos-preview-points').textContent = '0 แต้ม';
-
+        closeModal('product-modal');
         await syncFromCloud();
         renderAdminDashboard();
-        showToast(`บันทึกยอดซื้อ ${amount} บาท ให้คุณ ${member.full_name} (+${pointsEarned} แต้ม)`);
-        focusPOSBarcodeInput();
     } finally {
         if (btn) btn.disabled = false;
     }
+}
+
+async function deleteProduct(productId) {
+    if (!confirm('ยืนยันการลบเมนูนี้ออกจากระบบหรือไม่?')) return;
+    const { error } = await sb.from('products').delete().eq('id', productId);
+    if (error) {
+        showToast('ลบเมนูไม่สำเร็จ');
+        return;
+    }
+    posCart = posCart.filter(c => String(c.id) !== String(productId));
+    await syncFromCloud();
+    renderAdminDashboard();
+    showToast('ลบเมนูเรียบร้อยแล้ว');
 }
 
 async function handleUpdateRate(e) {
@@ -1256,24 +1538,8 @@ async function handleUpdateRate(e) {
     }
 
     await syncFromCloud();
-    calculatePreviewPoints();
+    renderPOSCart();
     showToast(`อัปเดตอัตราคำนวณแต้มเป็น ทุก ${newRate} บาท = 1 แต้ม`);
-}
-
-function renderRecentPOS() {
-    const tbody = document.getElementById('admin-recent-pos-tbody');
-    if (!tbody) return;
-    const recent = db.point_history.filter(h => (Number(h.amount) || 0) > 0).slice(0, 5);
-    tbody.innerHTML = recent.map(item => {
-        const user = db.users.find(u => String(u.id) === String(item.user_id));
-        return `
-            <tr>
-                <td>${escapeHTML(user ? user.full_name : 'ไม่พบข้อมูล')}</td>
-                <td>${(Number(item.amount) || 0).toLocaleString()} ฿</td>
-                <td><strong>+${Number(item.points_earned) || 0}</strong></td>
-            </tr>
-        `;
-    }).join('');
 }
 
 // --- ส่วนแสดงประวัติการแลกของรางวัลอัตโนมัติ ---
@@ -1845,6 +2111,7 @@ function renderAdminReports() {
         .reduce((sum, h) => sum + (Number(h.points_earned) || 0), 0);
     const periodRedeemedCount = filteredRedemptions.length;
 
+    const recentSales = filteredHistory.filter(h => (Number(h.amount) || 0) > 0).slice(0, 15);
     const members = db.users.filter(u => u.role === 'member');
     const topMembers = [...members].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0)).slice(0, 5);
 
@@ -1872,6 +2139,40 @@ function renderAdminReports() {
         </div>
 
         <div style="margin-top: 22px;">
+            <h4 style="color:var(--primary-blue); margin-bottom:10px;"><i class="fa-solid fa-receipt"></i> บิลขายล่าสุด (${periodNames[reportPeriod]})</h4>
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>วัน-เวลา</th>
+                            <th>ลูกค้า</th>
+                            <th>รายการที่สั่ง</th>
+                            <th>ยอดรวม</th>
+                            <th>แต้มที่ได้</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${recentSales.length ? recentSales.map(s => {
+                            const user = db.users.find(u => String(u.id) === String(s.user_id));
+                            const customerLabel = (user && user.role === 'member')
+                                ? `${escapeHTML(user.full_name)} (${escapeHTML(user.student_id || '-')})`
+                                : 'ลูกค้าทั่วไป';
+                            return `
+                                <tr>
+                                    <td>${formatDateTime(s.created_at)}</td>
+                                    <td>${customerLabel}</td>
+                                    <td>${escapeHTML(s.note || '-')}</td>
+                                    <td><strong>${(Number(s.amount) || 0).toLocaleString()} ฿</strong></td>
+                                    <td>+${Number(s.points_earned) || 0} แต้ม</td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="5" style="text-align:center; color: var(--text-muted);">ยังไม่มีรายการขายในช่วงเวลานี้</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div style="margin-top: 24px;">
             <h4 style="color:var(--primary-blue); margin-bottom:10px;"><i class="fa-solid fa-trophy"></i> 5 อันดับสมาชิกที่มีแต้มสะสมสูงสุด</h4>
             <div class="table-responsive">
                 <table class="data-table">
@@ -1903,7 +2204,7 @@ function renderAdminReports() {
             </div>
         </div>
 
-        <div style="margin-top: 26px;">
+        <div style="margin-top: 24px;">
             <h4 style="color:var(--primary-blue); margin-bottom:10px;"><i class="fa-solid fa-shield-halved"></i> ประวัติการแก้ไขแต้มด้วยมือ (Audit Log)</h4>
             <div class="table-responsive">
                 <table class="data-table">
@@ -1959,7 +2260,6 @@ function closeModal(modalId) {
     document.getElementById(modalId)?.classList.add('hidden');
 }
 
-// ปิด Modal เมื่อกดปุ่ม ESC หรือคลิกพื้นที่สีดำด้านนอกกรอบ Modal
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         document.querySelectorAll('.modal:not(.hidden)').forEach(m => m.classList.add('hidden'));
@@ -2037,6 +2337,5 @@ function startRealtimeSync() {
         .subscribe();
 }
 
-// เริ่มทำงานทันทีที่เปิดหน้าเว็บ: กู้คืนสถานะล็อกอิน + ซิงก์เรียลไทม์
 restoreSession();
 startRealtimeSync();

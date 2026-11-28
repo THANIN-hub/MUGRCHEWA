@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MUG R-CHEWA</title>
+    <title>MUG R-CHEWA - Cafe POS & Loyalty</title>
     <!-- Google Fonts: Prompt -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,8 +16,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- Custom CSS -->
     <link rel="stylesheet" href="style.css">
-    <link rel="icon" type="image/png" href="ICON.jpg">
-<link rel="shortcut icon" type="image/png" href="ICON.jpg">
 </head>
 <body>
 
@@ -31,10 +29,10 @@
         <div class="auth-card">
             <div class="brand-header">
                 <div class="brand-logo">
-                    <img src="ICON.jpg" alt="โลโก้ร้านมักอาชีวะ" style="width: 40px; height: 40px; object-fit: cover; border-radius: 50%;">
+                    <i class="fa-solid fa-mug-hot"></i>
                 </div>
                 <h1>ร้านมักอาชีวะ</h1>
-                <p>ระบบสะสมแต้มสมาชิกดิจิทัล (Digital Loyalty System)</p>
+                <p>ระบบ POS คาเฟ่ & สะสมแต้มสมาชิกดิจิทัล</p>
             </div>
 
             <div class="auth-tabs">
@@ -94,7 +92,7 @@
         <!-- แถบนำทางด้านบน (Navbar) -->
         <header class="navbar">
             <div class="nav-brand">
-                <img src="ICON.jpg" alt="โลโก้ร้านมักอาชีวะ" style="width: 40px; height: 40px; object-fit: cover; border-radius: 50%;">
+                <i class="fa-solid fa-mug-hot"></i>
                 <span>ร้านมักอาชีวะ</span>
                 <span class="badge-role" id="nav-user-role">สมาชิก</span>
             </div>
@@ -206,7 +204,7 @@
                             <thead>
                                 <tr>
                                     <th>วัน-เวลา</th>
-                                    <th>รายการ / หมายเหตุ</th>
+                                    <th>รายการที่สั่ง / หมายเหตุ</th>
                                     <th>ยอดซื้อ (บาท)</th>
                                     <th>แต้มที่เปลี่ยนแปลง</th>
                                 </tr>
@@ -241,7 +239,7 @@
         </main>
 
         <!-- ==========================================
-             มุมมองที่ 2.2: ระบบสำหรับผู้ดูแลร้าน (Admin View)
+             มุมมองที่ 2.2: ระบบสำหรับผู้ดูแลร้าน (Admin / POS View)
              ========================================== -->
         <main id="admin-dashboard" class="container hidden">
             <!-- แถบสถิติภาพรวม (KPI Summary) -->
@@ -279,7 +277,10 @@
             <!-- เมนูจัดการสำหรับผู้ดูแลร้าน -->
             <div class="sub-nav">
                 <button type="button" class="sub-nav-btn active" onclick="switchAdminTab('pos', this)">
-                    <i class="fa-solid fa-cash-register"></i> บันทึกยอดซื้อ & แจกแต้ม
+                    <i class="fa-solid fa-cash-register"></i> หน้าขาย POS คาเฟ่
+                </button>
+                <button type="button" class="sub-nav-btn" onclick="switchAdminTab('products', this)">
+                    <i class="fa-solid fa-mug-saucer"></i> จัดการเมนูร้าน
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('redemptions', this)">
                     <i class="fa-solid fa-receipt"></i> ประวัติการแลกรางวัล
@@ -294,86 +295,143 @@
                     <i class="fa-solid fa-boxes-stacked"></i> จัดการของรางวัล
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('reports', this)">
-                    <i class="fa-solid fa-chart-pie"></i> รายงานสรุป & Audit Log
+                    <i class="fa-solid fa-chart-pie"></i> รายงานสรุป & ตั้งค่า
                 </button>
             </div>
 
-            <!-- แท็บ 1: บันทึกยอดซื้อและคำนวณแต้มอัตโนมัติ (POS + Barcode Scanner) -->
+            <!-- ==========================================
+                 แท็บ 1: หน้าขาย POS คาเฟ่ (ปุ่มคลิกเลือกเมนู + ตะกร้าออเดอร์)
+                 ========================================== -->
             <div id="admin-tab-pos" class="tab-content active">
-                <div class="grid-2-col">
+                <div class="pos-cafe-layout">
+                    <!-- ฝั่งซ้าย: ปุ่มกดเลือกเมนูสินค้า -->
                     <div class="card-box">
-                        <h3><i class="fa-solid fa-barcode"></i> สแกนบาร์โค้ด / บันทึกยอดซื้อให้สมาชิก</h3>
-                        <form id="pos-form" onsubmit="handleRecordPurchase(event)">
-                            <div class="form-group">
-                                <label for="pos-member-search">ยิงบาร์โค้ดสมาชิก หรือพิมพ์เบอร์โทรศัพท์</label>
-                                <div class="pos-barcode-input-wrap">
-                                    <i class="fa-solid fa-barcode barcode-prefix-icon"></i>
-                                    <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="คลิกช่องนี้แล้วยิงบาร์โค้ดสมาชิกได้เลย..." oninput="handlePOSMemberSearch()" onkeydown="handlePOSBarcodeKeydown(event)" autocomplete="off" required>
-                                    <button type="button" class="btn-clear-pos" onclick="clearPOSMember()" title="ล้างค่าและพร้อมสแกนคนถัดไป">
-                                        <i class="fa-solid fa-xmark"></i>
-                                    </button>
-                                </div>
-                                <datalist id="pos-members-datalist"></datalist>
-                                <input type="hidden" id="pos-selected-user-id" required>
-                                <div id="pos-member-status" style="margin-top: 8px;"></div>
-                            </div>
-                            <div class="form-group">
-                                <label for="pos-amount">ยอดซื้อสินค้า (บาท)</label>
-                                <input type="number" id="pos-amount" min="1" step="1" placeholder="ระบุจำนวนเงิน เช่น 120" oninput="calculatePreviewPoints()" required>
-                                <div class="quick-amounts" style="display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;">
-                                    <button type="button" class="btn btn-outline-sm" onclick="setQuickAmount(20)">+20 ฿</button>
-                                    <button type="button" class="btn btn-outline-sm" onclick="setQuickAmount(40)">+40 ฿</button>
-                                    <button type="button" class="btn btn-outline-sm" onclick="setQuickAmount(60)">+60 ฿</button>
-                                    <button type="button" class="btn btn-outline-sm" onclick="setQuickAmount(100)">+100 ฿</button>
-                                    <button type="button" class="btn btn-outline-sm" onclick="setQuickAmount(200)">+200 ฿</button>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="pos-note">รายละเอียดรายการ (ไม่บังคับ)</label>
-                                <input type="text" id="pos-note" placeholder="เช่น ชาเขียวเย็น + ขนมปังปิ้ง">
-                            </div>
-                            <div class="points-preview-box">
-                                <span>แต้มที่จะได้รับอัตโนมัติ:</span>
-                                <strong id="pos-preview-points">0 แต้ม</strong>
-                            </div>
-                            <button type="submit" id="btn-pos-submit" class="btn btn-primary btn-block">
-                                <i class="fa-solid fa-circle-check"></i> ยืนยันบันทึกยอดและเพิ่มแต้ม
+                        <div class="card-header-flex" style="margin-bottom: 12px;">
+                            <h3 style="margin-bottom: 0;"><i class="fa-solid fa-mug-hot"></i> เลือกเมนูที่ลูกค้าสั่ง</h3>
+                            <button type="button" class="btn btn-outline-sm" onclick="openProductModal()">
+                                <i class="fa-solid fa-plus"></i> เพิ่มเมนูใหม่
                             </button>
-                        </form>
+                        </div>
+
+                        <!-- แถบหมวดหมู่เมนู -->
+                        <div id="pos-category-tabs" class="pos-category-bar"></div>
+
+                        <!-- ตารางปุ่มเมนูแบบสัมผัส -->
+                        <div id="pos-menu-grid" class="pos-menu-grid"></div>
                     </div>
 
-                    <div class="card-box">
-                        <h3><i class="fa-solid fa-sliders"></i> ตั้งค่าอัตราคำนวณแต้ม</h3>
-                        <form id="rate-settings-form" onsubmit="handleUpdateRate(event)">
-                            <div class="form-group">
-                                <label for="setting-baht-per-point">ยอดซื้อกี่บาท = 1 แต้ม</label>
-                                <input type="number" id="setting-baht-per-point" min="1" value="20" required>
-                            </div>
-                            <button type="submit" class="btn btn-secondary">
-                                <i class="fa-solid fa-floppy-disk"></i> บันทึกอัตราแต้ม
+                    <!-- ฝั่งขวา: บิลรายการสั่งซื้อ & คิดเงิน -->
+                    <div class="card-box pos-cart-panel">
+                        <div class="card-header-flex" style="margin-bottom: 10px;">
+                            <h3 style="margin-bottom: 0;"><i class="fa-solid fa-receipt"></i> รายการในบิลปัจจุบัน</h3>
+                            <button type="button" class="btn btn-danger" onclick="clearPOSCart()">
+                                <i class="fa-solid fa-trash-can"></i> ล้างบิล
                             </button>
-                        </form>
-
-                        <hr class="divider">
-
-                        <h4>รายการแจกแต้มล่าสุด</h4>
-                        <div class="table-responsive">
-                            <table class="data-table compact">
-                                <thead>
-                                    <tr>
-                                        <th>สมาชิก</th>
-                                        <th>ยอดซื้อ</th>
-                                        <th>แต้มที่ได้</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="admin-recent-pos-tbody"></tbody>
-                            </table>
                         </div>
+
+                        <!-- ค้นหาหรือยิงบาร์โค้ดสมาชิก -->
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label for="pos-member-search" style="font-size: 13px;">สมาชิกสะสมแต้ม (สแกนบาร์โค้ด หรือพิมพ์เบอร์โทร - เว้นว่างได้)</label>
+                            <div class="pos-barcode-input-wrap">
+                                <i class="fa-solid fa-user-tag barcode-prefix-icon"></i>
+                                <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="ระบุเบอร์โทรสมาชิกเพื่อรับแต้ม (ถ้าไม่เป็นสมาชิกไม่ต้องใส่)" oninput="handlePOSMemberSearch()" onkeydown="handlePOSBarcodeKeydown(event)" autocomplete="off">
+                                <button type="button" class="btn-clear-pos" onclick="clearPOSMember()" title="ล้างข้อมูลสมาชิก">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <datalist id="pos-members-datalist"></datalist>
+                            <input type="hidden" id="pos-selected-user-id">
+                            <div id="pos-member-status" style="margin-top: 6px;"></div>
+                        </div>
+
+                        <!-- รายการสินค้าในตะกร้า -->
+                        <div id="pos-cart-items" class="pos-cart-items">
+                            <div class="pos-empty-cart">
+                                <i class="fa-solid fa-hand-pointer"></i>
+                                <p>คลิกเลือกเมนูทางฝั่งซ้ายเพื่อเพิ่มรายการสั่งซื้อ</p>
+                            </div>
+                        </div>
+
+                        <!-- หมายเหตุเพิ่มเติม (เช่น หวานน้อย / แยกน้ำแข็ง) -->
+                        <div class="form-group" style="margin-top: 10px; margin-bottom: 12px;">
+                            <input type="text" id="pos-note" placeholder="หมายเหตุออเดอร์ เช่น หวานน้อย, แยกน้ำแข็ง (ไม่บังคับ)">
+                        </div>
+
+                        <!-- กล่องสรุปยอดเงิน & แต้มสะสม -->
+                        <div class="pos-summary-box">
+                            <div class="pos-summary-row">
+                                <span>จำนวนแก้ว/ชิ้นรวม:</span>
+                                <strong id="pos-total-qty">0 รายการ</strong>
+                            </div>
+                            <div class="pos-summary-row">
+                                <span>แต้มสะสมที่จะได้รับ:</span>
+                                <strong id="pos-preview-points" style="color: #D97706;">0 แต้ม</strong>
+                            </div>
+                            <div class="pos-summary-total">
+                                <span>ยอดรวมทั้งสิ้น:</span>
+                                <strong id="pos-total-amount">0 ฿</strong>
+                            </div>
+                        </div>
+
+                        <!-- ช่องรับเงิน & คำนวณเงินทอน -->
+                        <div class="pos-payment-box">
+                            <div class="form-group" style="margin-bottom: 8px;">
+                                <label for="pos-cash-received" style="font-size: 13px;">รับเงินสดมา (บาท) — หรือกดปุ่มธนบัตร</label>
+                                <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline-sm" onclick="setExactCash()">รับพอดี</button>
+                                    <button type="button" class="btn btn-outline-sm" onclick="addCashReceived(20)">+20</button>
+                                    <button type="button" class="btn btn-outline-sm" onclick="addCashReceived(50)">+50</button>
+                                    <button type="button" class="btn btn-outline-sm" onclick="addCashReceived(100)">+100</button>
+                                    <button type="button" class="btn btn-outline-sm" onclick="addCashReceived(500)">+500</button>
+                                    <button type="button" class="btn btn-outline-sm" onclick="addCashReceived(1000)">+1,000</button>
+                                </div>
+                                <input type="number" id="pos-cash-received" min="0" step="1" placeholder="ระบุจำนวนเงินที่รับมา (เว้นว่างได้หากสแกนจ่าย)" oninput="calculatePOSChange()">
+                            </div>
+                            <div class="pos-change-row">
+                                <span>เงินทอน:</span>
+                                <strong id="pos-change-amount">0 ฿</strong>
+                            </div>
+                        </div>
+
+                        <button type="button" id="btn-pos-checkout" class="btn btn-primary btn-block" style="padding: 13px; font-size: 16px;" onclick="handleCheckoutPOS()">
+                            <i class="fa-solid fa-circle-check"></i> ยืนยันรับเงิน & บันทึกออเดอร์
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <!-- แท็บ 2: ประวัติการแลกของรางวัล -->
+            <!-- ==========================================
+                 แท็บ 2: จัดการเมนูอาหาร/เครื่องดื่มของร้าน (Admin CRUD)
+                 ========================================== -->
+            <div id="admin-tab-products" class="tab-content">
+                <div class="card-box">
+                    <div class="card-header-flex">
+                        <h3><i class="fa-solid fa-mug-saucer"></i> รายการเมนูเครื่องดื่มและอาหารของร้าน</h3>
+                        <div class="action-bar">
+                            <input type="text" id="product-search" placeholder="ค้นหาชื่อเมนู / หมวดหมู่..." oninput="renderAdminProducts()">
+                            <button type="button" class="btn btn-primary" onclick="openProductModal()">
+                                <i class="fa-solid fa-plus"></i> เพิ่มเมนูใหม่
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ชื่อเมนู</th>
+                                    <th>หมวดหมู่</th>
+                                    <th>ราคาขาย (บาท)</th>
+                                    <th>สถานะหน้าร้าน</th>
+                                    <th>จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-products-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- แท็บ 3: ประวัติการแลกของรางวัล -->
             <div id="admin-tab-redemptions" class="tab-content">
                 <div class="card-box">
                     <h3><i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัลของสมาชิก (ตัดแต้มอัตโนมัติ)</h3>
@@ -395,7 +453,7 @@
                 </div>
             </div>
 
-            <!-- แท็บ 3: จัดการแบนเนอร์โปรโมชั่น -->
+            <!-- แท็บ 4: จัดการแบนเนอร์โปรโมชั่น -->
             <div id="admin-tab-promotions" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
@@ -408,7 +466,7 @@
                 </div>
             </div>
 
-            <!-- แท็บ 4: จัดการข้อมูลสมาชิก (CRUD) -->
+            <!-- แท็บ 5: จัดการข้อมูลสมาชิก (CRUD) -->
             <div id="admin-tab-members" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
@@ -437,7 +495,7 @@
                 </div>
             </div>
 
-            <!-- แท็บ 5: จัดการของรางวัล (CRUD) -->
+            <!-- แท็บ 6: จัดการของรางวัล (CRUD) -->
             <div id="admin-tab-rewards" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
@@ -450,8 +508,21 @@
                 </div>
             </div>
 
-            <!-- แท็บ 6: รายงานสรุปผล & Audit Log -->
+            <!-- แท็บ 7: รายงานสรุปผล & ตั้งค่าอัตราแต้ม -->
             <div id="admin-tab-reports" class="tab-content">
+                <div class="card-box" style="margin-bottom: 20px;">
+                    <h3><i class="fa-solid fa-sliders"></i> ตั้งค่าอัตราคำนวณแต้มสะสม</h3>
+                    <form id="rate-settings-form" onsubmit="handleUpdateRate(event)" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+                        <div class="form-group" style="margin-bottom: 0; min-width: 240px;">
+                            <label for="setting-baht-per-point">ยอดซื้อกี่บาท = 1 แต้ม</label>
+                            <input type="number" id="setting-baht-per-point" min="1" value="20" required>
+                        </div>
+                        <button type="submit" class="btn btn-secondary">
+                            <i class="fa-solid fa-floppy-disk"></i> บันทึกอัตราแต้ม
+                        </button>
+                    </form>
+                </div>
+
                 <div class="card-box">
                     <div class="card-header-flex">
                         <h3><i class="fa-solid fa-chart-line"></i> รายงานสรุปยอดขาย แต้มสะสม และประวัติแก้แต้ม (Audit Log)</h3>
@@ -469,6 +540,49 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- ==========================================
+         Modal เพิ่ม/แก้ไขเมนูสินค้าของร้าน (Cafe Menu CRUD)
+         ========================================== -->
+    <div id="product-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="product-modal-title">เพิ่มเมนูใหม่</h3>
+                <button type="button" class="close-btn" onclick="closeModal('product-modal')" aria-label="ปิด">&times;</button>
+            </div>
+            <form id="product-form" onsubmit="saveProduct(event)">
+                <input type="hidden" id="edit-product-id">
+                <div class="form-group">
+                    <label for="modal-prod-name">ชื่อเมนู</label>
+                    <input type="text" id="modal-prod-name" placeholder="เช่น อเมริกาโน่น้ำผึ้งมะนาว" required>
+                </div>
+                <div class="form-group">
+                    <label for="modal-prod-category">หมวดหมู่เมนู</label>
+                    <input type="text" id="modal-prod-category" list="product-categories-list" placeholder="เลือกหรือพิมพ์หมวดหมู่ เช่น กาแฟ, ชา, นม/โกโก้, ขนม" required>
+                    <datalist id="product-categories-list">
+                        <option value="กาแฟ">
+                        <option value="ชา">
+                        <option value="นม/โกโก้">
+                        <option value="อิตาเลียนโซดา">
+                        <option value="ขนม/เบเกอรี่">
+                        <option value="ท็อปปิ้ง">
+                    </datalist>
+                </div>
+                <div class="form-group">
+                    <label for="modal-prod-price">ราคาขาย (บาท)</label>
+                    <input type="number" id="modal-prod-price" min="0" step="1" placeholder="เช่น 50" required>
+                </div>
+                <div class="form-group">
+                    <label for="modal-prod-available">สถานะการขายหน้าร้าน</label>
+                    <select id="modal-prod-available">
+                        <option value="1">พร้อมขาย (แสดงปุ่มหน้า POS)</option>
+                        <option value="0">สินค้าหมดชั่วคราว (ซ่อนจากหน้า POS)</option>
+                    </select>
+                </div>
+                <button type="submit" id="btn-save-product" class="btn btn-primary btn-block">บันทึกเมนู</button>
+            </form>
+        </div>
     </div>
 
     <!-- ==========================================
