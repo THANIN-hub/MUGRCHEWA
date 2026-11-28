@@ -295,32 +295,48 @@
                     <i class="fa-solid fa-boxes-stacked"></i> จัดการของรางวัล
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('reports', this)">
-                    <i class="fa-solid fa-chart-pie"></i> รายงานสรุป & ตั้งค่า
+                    <i class="fa-solid fa-chart-pie"></i> รายงานสรุป
                 </button>
             </div>
 
             <!-- ==========================================
-                 แท็บ 1: หน้าขาย POS คาเฟ่ (ปุ่มคลิกเลือกเมนู + ตะกร้าออเดอร์)
+                 แท็บ 1: หน้าขาย POS คาเฟ่ (ปุ่มคลิกเลือกเมนู + ตั้งค่าแต้ม + ชำระเงิน + ปริ้นใบเสร็จ)
                  ========================================== -->
             <div id="admin-tab-pos" class="tab-content active">
                 <div class="pos-cafe-layout">
-                    <!-- ฝั่งซ้าย: ปุ่มกดเลือกเมนูสินค้า -->
-                    <div class="card-box">
-                        <div class="card-header-flex" style="margin-bottom: 12px;">
-                            <h3 style="margin-bottom: 0;"><i class="fa-solid fa-mug-hot"></i> เลือกเมนูที่ลูกค้าสั่ง</h3>
-                            <button type="button" class="btn btn-outline-sm" onclick="openProductModal()">
-                                <i class="fa-solid fa-plus"></i> เพิ่มเมนูใหม่
-                            </button>
+                    <!-- ฝั่งซ้าย: ปุ่มกดเลือกเมนูสินค้า + ตั้งค่าอัตราคำนวณแต้ม -->
+                    <div style="display: flex; flex-direction: column; gap: 20px;">
+                        <div class="card-box">
+                            <div class="card-header-flex" style="margin-bottom: 12px;">
+                                <h3 style="margin-bottom: 0;"><i class="fa-solid fa-mug-hot"></i> เลือกเมนูที่ลูกค้าสั่ง</h3>
+                                <button type="button" class="btn btn-primary" style="padding: 7px 14px; font-size: 13px;" onclick="openProductModal()">
+                                    <i class="fa-solid fa-plus"></i> เพิ่มเมนูใหม่
+                                </button>
+                            </div>
+
+                            <!-- แถบหมวดหมู่เมนู -->
+                            <div id="pos-category-tabs" class="pos-category-bar"></div>
+
+                            <!-- ตารางปุ่มเมนูแบบสัมผัส -->
+                            <div id="pos-menu-grid" class="pos-menu-grid"></div>
                         </div>
 
-                        <!-- แถบหมวดหมู่เมนู -->
-                        <div id="pos-category-tabs" class="pos-category-bar"></div>
-
-                        <!-- ตารางปุ่มเมนูแบบสัมผัส -->
-                        <div id="pos-menu-grid" class="pos-menu-grid"></div>
+                        <!-- กล่องตั้งค่าอัตราคำนวณแต้มสะสม (ย้ายมาไว้ในหน้า POS) -->
+                        <div class="card-box">
+                            <h3 style="margin-bottom: 10px;"><i class="fa-solid fa-sliders"></i> ตั้งค่าอัตราคำนวณแต้มสะสม</h3>
+                            <form id="rate-settings-form" onsubmit="handleUpdateRate(event)" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+                                <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
+                                    <label for="setting-baht-per-point">ยอดซื้อกี่บาท = 1 แต้ม (ปัจจุบัน: ทุก <span id="pos-current-rate-label">20</span> บาท = 1 แต้ม)</label>
+                                    <input type="number" id="setting-baht-per-point" min="1" value="20" required>
+                                </div>
+                                <button type="submit" class="btn btn-secondary">
+                                    <i class="fa-solid fa-floppy-disk"></i> บันทึกอัตราแต้ม
+                                </button>
+                            </form>
+                        </div>
                     </div>
 
-                    <!-- ฝั่งขวา: บิลรายการสั่งซื้อ & คิดเงิน -->
+                    <!-- ฝั่งขวา: บิลรายการสั่งซื้อ & ชำระเงิน -->
                     <div class="card-box pos-cart-panel">
                         <div class="card-header-flex" style="margin-bottom: 10px;">
                             <h3 style="margin-bottom: 0;"><i class="fa-solid fa-receipt"></i> รายการในบิลปัจจุบัน</h3>
@@ -373,10 +389,20 @@
                             </div>
                         </div>
 
-                        <!-- ช่องรับเงิน & คำนวณเงินทอน -->
+                        <!-- ระบบเลือกวิธีชำระเงิน -->
                         <div class="pos-payment-box">
-                            <div class="form-group" style="margin-bottom: 8px;">
-                                <label for="pos-cash-received" style="font-size: 13px;">รับเงินสดมา (บาท) — หรือกดปุ่มธนบัตร</label>
+                            <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 8px;">เลือกช่องทางชำระเงิน</label>
+                            <div class="payment-method-tabs">
+                                <button type="button" id="pay-method-cash" class="pay-method-btn active" onclick="setPaymentMethod('cash')">
+                                    <i class="fa-solid fa-money-bill-wave"></i> เงินสด
+                                </button>
+                                <button type="button" id="pay-method-transfer" class="pay-method-btn" onclick="setPaymentMethod('transfer')">
+                                    <i class="fa-solid fa-qrcode"></i> โอน / สแกน QR
+                                </button>
+                            </div>
+
+                            <!-- ส่วนรับเงินสดและคำนวณเงินทอน -->
+                            <div id="pos-cash-section" style="margin-top: 10px;">
                                 <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
                                     <button type="button" class="btn btn-outline-sm" onclick="setExactCash()">รับพอดี</button>
                                     <button type="button" class="btn btn-outline-sm" onclick="addCashReceived(20)">+20</button>
@@ -385,16 +411,21 @@
                                     <button type="button" class="btn btn-outline-sm" onclick="addCashReceived(500)">+500</button>
                                     <button type="button" class="btn btn-outline-sm" onclick="addCashReceived(1000)">+1,000</button>
                                 </div>
-                                <input type="number" id="pos-cash-received" min="0" step="1" placeholder="ระบุจำนวนเงินที่รับมา (เว้นว่างได้หากสแกนจ่าย)" oninput="calculatePOSChange()">
+                                <input type="number" id="pos-cash-received" min="0" step="1" placeholder="ระบุจำนวนเงินสดที่รับมา (เว้นว่างได้ถ้ารับพอดี)" oninput="calculatePOSChange()">
+                                <div class="pos-change-row" style="margin-top: 8px;">
+                                    <span>เงินทอน:</span>
+                                    <strong id="pos-change-amount">0 ฿</strong>
+                                </div>
                             </div>
-                            <div class="pos-change-row">
-                                <span>เงินทอน:</span>
-                                <strong id="pos-change-amount">0 ฿</strong>
+
+                            <!-- ส่วนโอนเงิน / สแกน QR -->
+                            <div id="pos-transfer-section" class="hidden" style="margin-top: 10px; background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 10px; padding: 10px; text-align: center; font-size: 13px; color: var(--primary-blue);">
+                                <i class="fa-solid fa-circle-check"></i> ชำระผ่านการโอนเงิน / สแกน QR เต็มจำนวนตามยอดบิล
                             </div>
                         </div>
 
                         <button type="button" id="btn-pos-checkout" class="btn btn-primary btn-block" style="padding: 13px; font-size: 16px;" onclick="handleCheckoutPOS()">
-                            <i class="fa-solid fa-circle-check"></i> ยืนยันรับเงิน & บันทึกออเดอร์
+                            <i class="fa-solid fa-print"></i> ยืนยันชำระเงิน & ออกใบเสร็จ
                         </button>
                     </div>
                 </div>
@@ -508,21 +539,8 @@
                 </div>
             </div>
 
-            <!-- แท็บ 7: รายงานสรุปผล & ตั้งค่าอัตราแต้ม -->
+            <!-- แท็บ 7: รายงานสรุปผล -->
             <div id="admin-tab-reports" class="tab-content">
-                <div class="card-box" style="margin-bottom: 20px;">
-                    <h3><i class="fa-solid fa-sliders"></i> ตั้งค่าอัตราคำนวณแต้มสะสม</h3>
-                    <form id="rate-settings-form" onsubmit="handleUpdateRate(event)" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
-                        <div class="form-group" style="margin-bottom: 0; min-width: 240px;">
-                            <label for="setting-baht-per-point">ยอดซื้อกี่บาท = 1 แต้ม</label>
-                            <input type="number" id="setting-baht-per-point" min="1" value="20" required>
-                        </div>
-                        <button type="submit" class="btn btn-secondary">
-                            <i class="fa-solid fa-floppy-disk"></i> บันทึกอัตราแต้ม
-                        </button>
-                    </form>
-                </div>
-
                 <div class="card-box">
                     <div class="card-header-flex">
                         <h3><i class="fa-solid fa-chart-line"></i> รายงานสรุปยอดขาย แต้มสะสม และประวัติแก้แต้ม (Audit Log)</h3>
@@ -543,6 +561,92 @@
     </div>
 
     <!-- ==========================================
+         Modal สรุปออเดอร์ & พิมพ์ใบเสร็จหน้าร้าน (POS Receipt Modal)
+         ========================================== -->
+    <div id="pos-receipt-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-content" style="max-width: 380px;">
+            <div class="modal-header no-print">
+                <h3><i class="fa-solid fa-receipt"></i> สรุปออเดอร์ & ใบเสร็จรับเงิน</h3>
+                <button type="button" class="close-btn" onclick="closeModal('pos-receipt-modal')" aria-label="ปิด">&times;</button>
+            </div>
+
+            <!-- พื้นที่ใบเสร็จสำหรับสั่งพิมพ์ (Printable Receipt Area) -->
+            <div id="printable-receipt-area" class="receipt-paper">
+                <div class="receipt-header">
+                    <h4>ร้านมักอาชีวะ (MUG R-CHEWA)</h4>
+                    <p>ใบเสร็จรับเงินอย่างย่อ / ใบสรุปรายการ</p>
+                    <small id="rec-bill-no">เลขที่บิล: #0000</small><br>
+                    <small id="rec-datetime">วันที่: -</small>
+                </div>
+
+                <div class="receipt-divider"></div>
+
+                <div class="receipt-customer">
+                    <div><strong>ลูกค้า:</strong> <span id="rec-customer-name">ลูกค้าทั่วไป</span></div>
+                    <div id="rec-member-phone-row" style="display: none;"><strong>เบอร์สมาชิก:</strong> <span id="rec-customer-phone">-</span></div>
+                </div>
+
+                <div class="receipt-divider"></div>
+
+                <table class="receipt-items-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align: left;">รายการ</th>
+                            <th style="text-align: center;">จำนวน</th>
+                            <th style="text-align: right;">รวม</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rec-items-tbody"></tbody>
+                </table>
+
+                <div id="rec-note-row" class="receipt-note" style="display: none;">
+                    <strong>หมายเหตุ:</strong> <span id="rec-note-text">-</span>
+                </div>
+
+                <div class="receipt-divider"></div>
+
+                <div class="receipt-totals">
+                    <div class="rec-row rec-grand-total">
+                        <span>ยอดรวมสุทธิ</span>
+                        <span id="rec-total-amount">0.00 ฿</span>
+                    </div>
+                    <div class="rec-row">
+                        <span>ช่องทางชำระเงิน</span>
+                        <span id="rec-pay-method">เงินสด</span>
+                    </div>
+                    <div class="rec-row" id="rec-cash-row">
+                        <span>รับเงินสด</span>
+                        <span id="rec-cash-received">0.00 ฿</span>
+                    </div>
+                    <div class="rec-row" id="rec-change-row">
+                        <span>เงินทอน</span>
+                        <span id="rec-change-amount">0.00 ฿</span>
+                    </div>
+                </div>
+
+                <div id="rec-points-box" class="receipt-points-box" style="display: none;">
+                    <div>แต้มที่ได้รับบิลนี้: <strong id="rec-points-earned">+0 แต้ม</strong></div>
+                    <div>แต้มสะสมคงเหลือ: <strong id="rec-points-balance">0 แต้ม</strong></div>
+                </div>
+
+                <div class="receipt-footer">
+                    <p>ขอบคุณที่ใช้บริการครับ</p>
+                    <small>โปรดเก็บใบเสร็จไว้เป็นหลักฐาน</small>
+                </div>
+            </div>
+
+            <div class="no-print" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px;">
+                <button type="button" class="btn btn-primary" onclick="printPOSReceipt()">
+                    <i class="fa-solid fa-print"></i> ปริ้นใบเสร็จ
+                </button>
+                <button type="button" class="btn btn-outline" onclick="closeModal('pos-receipt-modal')">
+                    ปิดหน้าต่าง
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
          Modal เพิ่ม/แก้ไขเมนูสินค้าของร้าน (Cafe Menu CRUD)
          ========================================== -->
     <div id="product-modal" class="modal hidden" role="dialog" aria-modal="true">
@@ -555,7 +659,7 @@
                 <input type="hidden" id="edit-product-id">
                 <div class="form-group">
                     <label for="modal-prod-name">ชื่อเมนู</label>
-                    <input type="text" id="modal-prod-name" placeholder="เช่น อเมริกาโน่น้ำผึ้งมะนาว" required>
+                    <input type="text" id="modal-prod-name" placeholder="เช่น ลาเต้เย็น" required>
                 </div>
                 <div class="form-group">
                     <label for="modal-prod-category">หมวดหมู่เมนู</label>
@@ -571,7 +675,7 @@
                 </div>
                 <div class="form-group">
                     <label for="modal-prod-price">ราคาขาย (บาท)</label>
-                    <input type="number" id="modal-prod-price" min="0" step="1" placeholder="เช่น 50" required>
+                    <input type="number" id="modal-prod-price" min="0" step="1" placeholder="เช่น 35" required>
                 </div>
                 <div class="form-group">
                     <label for="modal-prod-available">สถานะการขายหน้าร้าน</label>

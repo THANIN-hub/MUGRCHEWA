@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบ POS คาเฟ่ & สะสมแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Touch POS + Menu CRUD + Loyalty)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Touch POS + Payment + Receipt Print)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -32,6 +32,7 @@ let realtimeChannel = null;
 
 // สถานะหน้าขาย POS คาเฟ่
 let posSelectedCategory = 'ทั้งหมด';
+let posPaymentMethod = 'cash'; // 'cash' หรือ 'transfer'
 let posCart = []; // [{ id, name, price, qty }]
 
 function escapeHTML(str) {
@@ -62,6 +63,10 @@ async function syncFromCloud() {
         if (redeemRes.error) throw redeemRes.error;
         if (promoRes.error) throw promoRes.error;
         if (settingsRes.error) throw settingsRes.error;
+
+        if (productsRes.error) {
+            console.warn('Products table warning:', productsRes.error.message);
+        }
 
         db.users = usersRes.data || [];
         db.products = productsRes.data || [];
@@ -97,7 +102,7 @@ async function syncFromCloud() {
         return true;
     } catch (err) {
         console.error('Supabase Sync Error:', err);
-        showToast('เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล (ตรวจสอบว่าสร้างตาราง products แล้วหรือยัง)');
+        showToast('เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล');
         return false;
     }
 }
@@ -1003,7 +1008,7 @@ function renderMemberHistory() {
 }
 
 // ==========================================================
-// 2. ระบบผู้ดูแลร้าน & หน้าขาย POS คาเฟ่ (Cafe Touch POS + Cart)
+// 2. ระบบผู้ดูแลร้าน & หน้าขาย POS คาเฟ่ (Cafe Touch POS + Payment + Receipt)
 // ==========================================================
 async function switchAdminTab(tabName, btnElement) {
     document.querySelectorAll('#admin-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
@@ -1029,7 +1034,9 @@ function renderAdminDashboard() {
     document.getElementById('stat-total-sales').textContent = totalSales.toLocaleString();
 
     const rateInput = document.getElementById('setting-baht-per-point');
+    const rateLabel = document.getElementById('pos-current-rate-label');
     if (rateInput) rateInput.value = db.settings.baht_per_point;
+    if (rateLabel) rateLabel.textContent = db.settings.baht_per_point;
 
     renderPOSMemberSelect();
     renderPOSCafeMenu();
@@ -1055,7 +1062,6 @@ function renderPOSCafeMenu() {
 
     const availableProducts = (db.products || []).filter(p => p.is_available !== false);
 
-    // สร้างแถบหมวดหมู่
     const categories = ['ทั้งหมด', ...new Set(availableProducts.map(p => p.category || 'อื่นๆ'))];
     if (!categories.includes(posSelectedCategory)) {
         posSelectedCategory = 'ทั้งหมด';
@@ -1067,7 +1073,6 @@ function renderPOSCafeMenu() {
         </button>
     `).join('');
 
-    // กรองเมนูตามหมวดหมู่ที่เลือก
     const filtered = posSelectedCategory === 'ทั้งหมด'
         ? availableProducts
         : availableProducts.filter(p => (p.category || 'อื่นๆ') === posSelectedCategory);
@@ -1137,6 +1142,7 @@ function clearPOSCart() {
     const noteInput = document.getElementById('pos-note');
     if (cashInput) cashInput.value = '';
     if (noteInput) noteInput.value = '';
+    setPaymentMethod('cash');
     renderPOSCafeMenu();
     renderPOSCart();
 }
@@ -1186,6 +1192,27 @@ function renderPOSCart() {
         : 'ไม่ระบุสมาชิก (0 แต้ม)';
 
     calculatePOSChange();
+}
+
+// --- ระบบเลือกช่องทางชำระเงิน & คำนวณเงินทอน ---
+function setPaymentMethod(method) {
+    posPaymentMethod = method;
+    const btnCash = document.getElementById('pay-method-cash');
+    const btnTransfer = document.getElementById('pay-method-transfer');
+    const cashSec = document.getElementById('pos-cash-section');
+    const transferSec = document.getElementById('pos-transfer-section');
+
+    if (method === 'cash') {
+        btnCash?.classList.add('active');
+        btnTransfer?.classList.remove('active');
+        cashSec?.classList.remove('hidden');
+        transferSec?.classList.add('hidden');
+    } else {
+        btnCash?.classList.remove('active');
+        btnTransfer?.classList.add('active');
+        cashSec?.classList.add('hidden');
+        transferSec?.classList.remove('hidden');
+    }
 }
 
 function setExactCash() {
@@ -1312,6 +1339,7 @@ function handlePOSMemberSearch(fromScannerEnter = false) {
     renderPOSCart();
 }
 
+// --- ยืนยันชำระเงิน บันทึกออเดอร์ และเปิดหน้าต่างใบเสร็จ ---
 async function handleCheckoutPOS() {
     if (!posCart.length) {
         showToast('กรุณาคลิกเลือกเมนูอย่างน้อย 1 รายการก่อนบันทึก');
@@ -1320,21 +1348,28 @@ async function handleCheckoutPOS() {
 
     const totalAmount = getPOSTotalAmount();
     const rawCash = document.getElementById('pos-cash-received')?.value.trim();
-    if (rawCash) {
-        const cash = parseFloat(rawCash) || 0;
-        if (cash < totalAmount) {
-            showToast(`จำนวนเงินที่รับมาไม่พอขาดอีก ${(totalAmount - cash).toLocaleString()} บาท`);
+    let cashReceived = totalAmount;
+    let changeAmount = 0;
+
+    if (posPaymentMethod === 'cash' && rawCash) {
+        cashReceived = parseFloat(rawCash) || 0;
+        if (cashReceived < totalAmount) {
+            showToast(`จำนวนเงินสดที่รับมาไม่พอขาดอีก ${(totalAmount - cashReceived).toLocaleString()} บาท`);
             return;
         }
+        changeAmount = cashReceived - totalAmount;
     }
 
     const btn = document.getElementById('btn-pos-checkout');
     const userId = document.getElementById('pos-selected-user-id').value;
     const customNote = document.getElementById('pos-note').value.trim();
+    const orderSnapshot = posCart.map(item => ({ ...item }));
+    const payMethodLabel = posPaymentMethod === 'cash' ? 'เงินสด' : 'โอนเงิน / QR';
 
-    // สร้างข้อความสรุปรายการที่สั่ง เช่น "ชาไทยเย็น x2, ขนมปังปิ้ง x1"
-    const itemsSummary = posCart.map(item => `${item.name} x${item.qty}`).join(', ');
-    const fullNote = customNote ? `${itemsSummary} (${customNote})` : itemsSummary;
+    const itemsSummary = orderSnapshot.map(item => `${item.name} x${item.qty}`).join(', ');
+    const fullNote = customNote
+        ? `[${payMethodLabel}] ${itemsSummary} (${customNote})`
+        : `[${payMethodLabel}] ${itemsSummary}`;
 
     if (btn) {
         btn.disabled = true;
@@ -1347,54 +1382,127 @@ async function handleCheckoutPOS() {
 
         let member = null;
         let pointsEarned = 0;
+        let newPointsBalance = 0;
 
         if (userId) {
             member = db.users.find(u => String(u.id) === String(userId));
             if (member) {
                 const rate = Math.max(1, parseInt(db.settings.baht_per_point, 10) || 20);
                 pointsEarned = Math.floor(totalAmount / rate);
-                const newPoints = (Number(member.points) || 0) + pointsEarned;
+                newPointsBalance = (Number(member.points) || 0) + pointsEarned;
 
-                const updRes = await sb.from('users').update({ points: newPoints }).eq('id', member.id);
+                const updRes = await sb.from('users').update({ points: newPointsBalance }).eq('id', member.id);
                 if (updRes.error) {
-                    showToast('เกิดข้อผิดพลาดในการเพิ่มแต้มสมาชิก');
+                    showToast('เกิดข้อผิดพลาดในการเพิ่มแต้มสมาชิก: ' + updRes.error.message);
                     return;
                 }
             }
         }
 
-        // บันทึกประวัติยอดขายและรายการที่สั่งลง point_history (ถ้าไม่ได้เป็นสมาชิกใช้ user_id ของแอดมินแทนเพื่อเก็บยอดขาย)
         const targetUserId = member ? member.id : currentUser.id;
         const insRes = await sb.from('point_history').insert([{
             user_id: targetUserId,
             amount: totalAmount,
             points_earned: member ? pointsEarned : 0,
-            note: member ? fullNote : `[ลูกค้าทั่วไป] ${fullNote}`
-        }]);
+            note: member ? fullNote : `[ลูกค้าทั่วไป | ${payMethodLabel}] ${itemsSummary}${customNote ? ' (' + customNote + ')' : ''}`
+        }]).select().single();
 
         if (insRes.error) {
-            showToast('เกิดข้อผิดพลาดในการบันทึกออเดอร์');
+            showToast('เกิดข้อผิดพลาดในการบันทึกออเดอร์: ' + insRes.error.message);
             return;
         }
 
-        const changeText = rawCash ? ` | เงินทอน ${(parseFloat(rawCash) - totalAmount).toLocaleString()} บาท` : '';
+        // เปิดหน้าต่างสรุปออเดอร์ & ใบเสร็จรับเงิน
+        openPOSReceiptModal({
+            billId: insRes.data ? insRes.data.id : Date.now(),
+            createdAt: insRes.data ? insRes.data.created_at : new Date().toISOString(),
+            member,
+            items: orderSnapshot,
+            note: customNote,
+            totalAmount,
+            paymentMethod: posPaymentMethod,
+            cashReceived,
+            changeAmount,
+            pointsEarned,
+            newPointsBalance
+        });
+
         clearPOSCart();
         clearPOSMember();
 
         await syncFromCloud();
         renderAdminDashboard();
-
-        if (member) {
-            showToast(`บันทึกออเดอร์ ${totalAmount.toLocaleString()} ฿ สำเร็จ! คุณ ${member.full_name} รับ +${pointsEarned} แต้ม${changeText}`);
-        } else {
-            showToast(`บันทึกออเดอร์ลูกค้าทั่วไป ${totalAmount.toLocaleString()} ฿ สำเร็จ!${changeText}`);
-        }
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> ยืนยันรับเงิน & บันทึกออเดอร์';
+            btn.innerHTML = '<i class="fa-solid fa-print"></i> ยืนยันชำระเงิน & ออกใบเสร็จ';
         }
     }
+}
+
+function openPOSReceiptModal(receiptData) {
+    document.getElementById('rec-bill-no').textContent = `เลขที่บิล: ${formatTicketCode(receiptData.billId)}`;
+    document.getElementById('rec-datetime').textContent = `วันที่: ${formatDateTime(receiptData.createdAt)}`;
+
+    const custNameEl = document.getElementById('rec-customer-name');
+    const phoneRowEl = document.getElementById('rec-member-phone-row');
+    const phoneValEl = document.getElementById('rec-customer-phone');
+
+    if (receiptData.member) {
+        custNameEl.textContent = receiptData.member.full_name;
+        phoneRowEl.style.display = 'block';
+        phoneValEl.textContent = receiptData.member.student_id || '-';
+    } else {
+        custNameEl.textContent = 'ลูกค้าทั่วไป';
+        phoneRowEl.style.display = 'none';
+    }
+
+    const tbody = document.getElementById('rec-items-tbody');
+    tbody.innerHTML = receiptData.items.map(item => `
+        <tr>
+            <td>${escapeHTML(item.name)}</td>
+            <td style="text-align: center;">x${item.qty}</td>
+            <td style="text-align: right;">${(item.price * item.qty).toLocaleString()} ฿</td>
+        </tr>
+    `).join('');
+
+    const noteRow = document.getElementById('rec-note-row');
+    if (receiptData.note) {
+        noteRow.style.display = 'block';
+        document.getElementById('rec-note-text').textContent = receiptData.note;
+    } else {
+        noteRow.style.display = 'none';
+    }
+
+    document.getElementById('rec-total-amount').textContent = `${receiptData.totalAmount.toLocaleString()} ฿`;
+    document.getElementById('rec-pay-method').textContent = receiptData.paymentMethod === 'cash' ? 'เงินสด' : 'โอนเงิน / QR';
+
+    const cashRow = document.getElementById('rec-cash-row');
+    const changeRow = document.getElementById('rec-change-row');
+    if (receiptData.paymentMethod === 'cash') {
+        cashRow.style.display = 'flex';
+        changeRow.style.display = 'flex';
+        document.getElementById('rec-cash-received').textContent = `${receiptData.cashReceived.toLocaleString()} ฿`;
+        document.getElementById('rec-change-amount').textContent = `${receiptData.changeAmount.toLocaleString()} ฿`;
+    } else {
+        cashRow.style.display = 'none';
+        changeRow.style.display = 'none';
+    }
+
+    const pointsBox = document.getElementById('rec-points-box');
+    if (receiptData.member) {
+        pointsBox.style.display = 'block';
+        document.getElementById('rec-points-earned').textContent = `+${receiptData.pointsEarned} แต้ม`;
+        document.getElementById('rec-points-balance').textContent = `${receiptData.newPointsBalance.toLocaleString()} แต้ม`;
+    } else {
+        pointsBox.style.display = 'none';
+    }
+
+    document.getElementById('pos-receipt-modal')?.classList.remove('hidden');
+}
+
+function printPOSReceipt() {
+    window.print();
 }
 
 // --- จัดการเมนูอาหารและเครื่องดื่มของร้าน (Product CRUD) ---
@@ -1483,7 +1591,8 @@ async function saveProduct(e) {
             }).eq('id', parseInt(id, 10));
 
             if (error) {
-                showToast('แก้ไขเมนูไม่สำเร็จ');
+                console.error('Update product error:', error);
+                showToast(`แก้ไขเมนูไม่สำเร็จ: ${error.message}`);
                 return;
             }
             showToast(`อัปเดตเมนู "${name}" เรียบร้อยแล้ว`);
@@ -1496,7 +1605,8 @@ async function saveProduct(e) {
             }]);
 
             if (error) {
-                showToast('เพิ่มเมนูใหม่ไม่สำเร็จ');
+                console.error('Insert product error:', error);
+                showToast(`เพิ่มเมนูไม่สำเร็จ: ${error.message}`);
                 return;
             }
             showToast(`เพิ่มเมนู "${name}" เรียบร้อยแล้ว`);
@@ -1514,7 +1624,7 @@ async function deleteProduct(productId) {
     if (!confirm('ยืนยันการลบเมนูนี้ออกจากระบบหรือไม่?')) return;
     const { error } = await sb.from('products').delete().eq('id', productId);
     if (error) {
-        showToast('ลบเมนูไม่สำเร็จ');
+        showToast(`ลบเมนูไม่สำเร็จ: ${error.message}`);
         return;
     }
     posCart = posCart.filter(c => String(c.id) !== String(productId));
@@ -1538,6 +1648,8 @@ async function handleUpdateRate(e) {
     }
 
     await syncFromCloud();
+    const rateLabel = document.getElementById('pos-current-rate-label');
+    if (rateLabel) rateLabel.textContent = newRate;
     renderPOSCart();
     showToast(`อัปเดตอัตราคำนวณแต้มเป็น ทุก ${newRate} บาท = 1 แต้ม`);
 }
