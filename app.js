@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบ POS คาเฟ่ & สะสมแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Touch POS + Payment + E-Receipt Print)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Touch POS + Payment + E-Receipt + Receipt Customizer)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -9,11 +9,22 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const SESSION_KEY = 'muk_rcheewa_user_id';
 
+const DEFAULT_RECEIPT_CONFIG = {
+    logo: '',
+    shop_name: 'ร้านมักอาชีวะ (MUG R-CHEWA)',
+    subtitle: 'ใบเสร็จรับเงินอิเล็กทรอนิกส์ / ใบสรุปรายการ',
+    address: '',
+    footer_1: 'ขอบคุณที่ใช้บริการครับ',
+    footer_2: 'ใบเสร็จอิเล็กทรอนิกส์จากระบบ POS ร้านมักอาชีวะ',
+    show_points: true
+};
+
 let db = {
     settings: {
         baht_per_point: 20,
         welcome_bonus: 5
     },
+    receipt_config: { ...DEFAULT_RECEIPT_CONFIG },
     users: [],
     products: [],
     rewards: [],
@@ -80,10 +91,19 @@ async function syncFromCloud() {
             welcome_bonus: 5
         };
 
+        db.receipt_config = { ...DEFAULT_RECEIPT_CONFIG };
+
         if (Array.isArray(settingsRes.data)) {
             settingsRes.data.forEach(s => {
                 if (!s || !s.setting_key) return;
-                if (s.setting_key !== 'lucky_spin_config' && !s.setting_key.startsWith('reset_req_')) {
+                if (s.setting_key === 'receipt_config' && s.setting_value) {
+                    try {
+                        const parsed = JSON.parse(s.setting_value);
+                        db.receipt_config = { ...DEFAULT_RECEIPT_CONFIG, ...parsed };
+                    } catch (e) {
+                        console.warn('Invalid receipt_config JSON:', e);
+                    }
+                } else if (s.setting_key !== 'lucky_spin_config' && !s.setting_key.startsWith('reset_req_')) {
                     const numVal = parseInt(s.setting_value, 10);
                     if (Number.isFinite(numVal) && numVal > 0) {
                         db.settings[s.setting_key] = numVal;
@@ -219,10 +239,8 @@ function parseHistoryNoteToReceipt(record) {
         paymentMethod = 'transfer';
     }
 
-    // ตัดแท็กหัวข้อออก เช่น [เงินสด] หรือ [ลูกค้าทั่วไป | โอนเงิน / QR]
     cleanBody = cleanBody.replace(/^\[.*?\]\s*/, '');
 
-    // แยกหมายเหตุในวงเล็บท้ายข้อความ (ถ้ามี)
     let note = '';
     const noteMatch = cleanBody.match(/\s*\(([^()]+)\)\s*$/);
     if (noteMatch) {
@@ -230,7 +248,6 @@ function parseHistoryNoteToReceipt(record) {
         cleanBody = cleanBody.slice(0, noteMatch.index).trim();
     }
 
-    // แยกรายการสินค้า เช่น "ลาเต้เย็น x2, ชาไทยเย็น x1"
     const items = [];
     if (cleanBody) {
         const parts = cleanBody.split(',').map(s => s.trim()).filter(Boolean);
@@ -248,7 +265,6 @@ function parseHistoryNoteToReceipt(record) {
         });
     }
 
-    // คำนวณราคาต่อรายการย้อนกลับหากเมนูถูกลบไปแล้ว
     if (items.length === 1 && items[0].price === 0 && totalAmount > 0) {
         items[0].price = totalAmount / items[0].qty;
     } else if (items.length > 1) {
@@ -1111,7 +1127,7 @@ function renderMemberHistory() {
 }
 
 // ==========================================================
-// 2. ระบบผู้ดูแลร้าน & หน้าขาย POS คาเฟ่ (Cafe Touch POS + Payment + E-Receipt)
+// 2. ระบบผู้ดูแลร้าน & หน้าขาย POS คาเฟ่ (Cafe Touch POS + Payment + E-Receipt + Receipt Customizer)
 // ==========================================================
 async function switchAdminTab(tabName, btnElement) {
     document.querySelectorAll('#admin-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
@@ -1131,10 +1147,15 @@ function renderAdminDashboard() {
         .reduce((sum, h) => sum + (Number(h.points_earned) || 0), 0);
     const totalSales = db.point_history.reduce((sum, h) => sum + (Number(h.amount) || 0), 0);
 
-    document.getElementById('stat-total-members').textContent = members.length.toLocaleString();
-    document.getElementById('stat-total-points').textContent = totalPointsGiven.toLocaleString();
-    document.getElementById('stat-total-redemptions').textContent = db.redemptions.length.toLocaleString();
-    document.getElementById('stat-total-sales').textContent = totalSales.toLocaleString();
+    const elMembers = document.getElementById('stat-total-members');
+    const elPoints = document.getElementById('stat-total-points');
+    const elRedeem = document.getElementById('stat-total-redemptions');
+    const elSales = document.getElementById('stat-total-sales');
+
+    if (elMembers) elMembers.textContent = members.length.toLocaleString();
+    if (elPoints) elPoints.textContent = totalPointsGiven.toLocaleString();
+    if (elRedeem) elRedeem.textContent = db.redemptions.length.toLocaleString();
+    if (elSales) elSales.textContent = totalSales.toLocaleString();
 
     const rateInput = document.getElementById('setting-baht-per-point');
     const rateLabel = document.getElementById('pos-current-rate-label');
@@ -1150,6 +1171,279 @@ function renderAdminDashboard() {
     renderAdminMembers();
     renderAdminRewards();
     renderAdminReports();
+    initReceiptSettingsPanel();
+}
+
+// ==========================================================
+// ระบบปรับแต่งรูปแบบและข้อความบนใบเสร็จ (Receipt Customizer & Live Preview)
+// ==========================================================
+function initReceiptSettingsPanel() {
+    const cfg = db.receipt_config || DEFAULT_RECEIPT_CONFIG;
+
+    // ผูก Dropzone สำหรับอัปโหลด/ลากวางโลโก้ใบเสร็จ (รองรับหลายรูปแบบ ID ที่อาจอยู่ใน HTML)
+    setupReceiptLogoDropzone();
+
+    const shopInput = document.getElementById('rec-set-shop-name') || document.getElementById('receipt-shop-name');
+    const subInput = document.getElementById('rec-set-subtitle') || document.getElementById('receipt-subtitle');
+    const addrInput = document.getElementById('rec-set-address') || document.getElementById('receipt-address');
+    const foot1Input = document.getElementById('rec-set-footer1') || document.getElementById('receipt-footer-1');
+    const foot2Input = document.getElementById('rec-set-footer2') || document.getElementById('receipt-footer-2');
+    const showPtsChk = document.getElementById('rec-set-show-points') || document.getElementById('receipt-show-points');
+
+    if (shopInput) {
+        shopInput.value = cfg.shop_name || '';
+        shopInput.oninput = updateReceiptLivePreview;
+    }
+    if (subInput) {
+        subInput.value = cfg.subtitle || '';
+        subInput.oninput = updateReceiptLivePreview;
+    }
+    if (addrInput) {
+        addrInput.value = cfg.address || '';
+        addrInput.oninput = updateReceiptLivePreview;
+    }
+    if (foot1Input) {
+        foot1Input.value = cfg.footer_1 || '';
+        foot1Input.oninput = updateReceiptLivePreview;
+    }
+    if (foot2Input) {
+        foot2Input.value = cfg.footer_2 || '';
+        foot2Input.oninput = updateReceiptLivePreview;
+    }
+    if (showPtsChk) {
+        showPtsChk.checked = cfg.show_points !== false;
+        showPtsChk.onchange = updateReceiptLivePreview;
+    }
+
+    setReceiptLogoPreview(cfg.logo || '');
+    updateReceiptLivePreview();
+}
+
+function setupReceiptLogoDropzone() {
+    const dropzone = document.getElementById('receipt-logo-dropzone') || document.getElementById('rec-logo-dropzone');
+    const fileInput = document.getElementById('receipt-logo-file-input') || document.getElementById('rec-logo-file-input') || dropzone?.querySelector('input[type="file"]');
+
+    if (!dropzone) return;
+
+    // สร้าง hidden file input ให้อัตโนมัติหากใน HTML ยังไม่ได้ใส่ <input type="file"> ไว้ในกล่อง dropzone
+    let actualFileInput = fileInput;
+    if (!actualFileInput) {
+        actualFileInput = document.createElement('input');
+        actualFileInput.type = 'file';
+        actualFileInput.accept = 'image/*';
+        actualFileInput.style.display = 'none';
+        actualFileInput.id = 'receipt-logo-file-input';
+        dropzone.appendChild(actualFileInput);
+    }
+
+    dropzone.style.cursor = 'pointer';
+
+    dropzone.onclick = (e) => {
+        if (e.target && (e.target.id === 'btn-remove-receipt-logo' || e.target.closest('#btn-remove-receipt-logo'))) {
+            return;
+        }
+        actualFileInput.click();
+    };
+
+    dropzone.ondragover = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add('dragover');
+    };
+
+    dropzone.ondragleave = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove('dragover');
+    };
+
+    dropzone.ondrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove('dragover');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+            processReceiptLogoFile(e.dataTransfer.files[0]);
+        }
+    };
+
+    actualFileInput.onchange = (e) => {
+        if (e.target && e.target.files && e.target.files[0]) {
+            processReceiptLogoFile(e.target.files[0]);
+        }
+    };
+}
+
+function processReceiptLogoFile(file) {
+    if (!file.type || !file.type.startsWith('image/')) {
+        showToast('กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG, WEBP)');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxDim = 320;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxDim || height > maxDim) {
+                if (width >= height) {
+                    height = Math.round((height * maxDim) / width);
+                    width = maxDim;
+                } else {
+                    width = Math.round((width * maxDim) / height);
+                    height = maxDim;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const compressed = canvas.toDataURL('image/jpeg', 0.85);
+            db.receipt_config.logo = compressed;
+            setReceiptLogoPreview(compressed);
+            updateReceiptLivePreview();
+            showToast('อัปโหลดโลโก้ใบเสร็จเรียบร้อยแล้ว (อย่าลืมกดปุ่มบันทึกการตั้งค่า)');
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function setReceiptLogoPreview(logoDataUrl) {
+    const hiddenInput = document.getElementById('rec-set-logo') || document.getElementById('receipt-logo-data');
+    if (hiddenInput) hiddenInput.value = logoDataUrl || '';
+
+    const dropzone = document.getElementById('receipt-logo-dropzone') || document.getElementById('rec-logo-dropzone');
+    if (!dropzone) return;
+
+    let previewWrap = document.getElementById('receipt-logo-preview-wrap');
+    if (!previewWrap) {
+        previewWrap = document.createElement('div');
+        previewWrap.id = 'receipt-logo-preview-wrap';
+        previewWrap.style.marginTop = '10px';
+        previewWrap.style.textAlign = 'center';
+        dropzone.appendChild(previewWrap);
+    }
+
+    if (logoDataUrl) {
+        previewWrap.innerHTML = `
+            <div style="display:inline-flex; flex-direction:column; align-items:center; gap:6px; background:#fff; padding:8px 14px; border-radius:10px; border:1px solid #CBD5E1;">
+                <img src="${logoDataUrl}" alt="โลโก้ใบเสร็จ" style="max-height:64px; max-width:160px; object-fit:contain;">
+                <button type="button" id="btn-remove-receipt-logo" class="btn btn-danger" style="padding:3px 10px; font-size:12px;" onclick="removeReceiptLogo(event)">
+                    <i class="fa-solid fa-trash"></i> ลบโลโก้
+                </button>
+            </div>
+        `;
+    } else {
+        previewWrap.innerHTML = '';
+    }
+}
+
+function removeReceiptLogo(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    db.receipt_config.logo = '';
+    const fileInput = document.getElementById('receipt-logo-file-input') || document.getElementById('rec-logo-file-input');
+    if (fileInput) fileInput.value = '';
+    setReceiptLogoPreview('');
+    updateReceiptLivePreview();
+    showToast('นำโลโก้ออกจากใบเสร็จแล้ว');
+}
+
+function getFormReceiptConfig() {
+    const shopInput = document.getElementById('rec-set-shop-name') || document.getElementById('receipt-shop-name');
+    const subInput = document.getElementById('rec-set-subtitle') || document.getElementById('receipt-subtitle');
+    const addrInput = document.getElementById('rec-set-address') || document.getElementById('receipt-address');
+    const foot1Input = document.getElementById('rec-set-footer1') || document.getElementById('receipt-footer-1');
+    const foot2Input = document.getElementById('rec-set-footer2') || document.getElementById('receipt-footer-2');
+    const showPtsChk = document.getElementById('rec-set-show-points') || document.getElementById('receipt-show-points');
+
+    return {
+        logo: db.receipt_config?.logo || '',
+        shop_name: (shopInput?.value.trim()) || DEFAULT_RECEIPT_CONFIG.shop_name,
+        subtitle: (subInput?.value.trim()) || DEFAULT_RECEIPT_CONFIG.subtitle,
+        address: addrInput?.value.trim() || '',
+        footer_1: (foot1Input?.value.trim()) || DEFAULT_RECEIPT_CONFIG.footer_1,
+        footer_2: (foot2Input?.value.trim()) || DEFAULT_RECEIPT_CONFIG.footer_2,
+        show_points: showPtsChk ? showPtsChk.checked : true
+    };
+}
+
+function updateReceiptLivePreview() {
+    const cfg = getFormReceiptConfig();
+
+    const prevLogo = document.getElementById('prev-rec-logo');
+    const prevShop = document.getElementById('prev-rec-shop-name');
+    const prevSub = document.getElementById('prev-rec-subtitle');
+    const prevAddr = document.getElementById('prev-rec-address');
+    const prevFoot1 = document.getElementById('prev-rec-footer1');
+    const prevFoot2 = document.getElementById('prev-rec-footer2');
+    const prevPtsBox = document.getElementById('prev-rec-points-box');
+
+    if (prevLogo) {
+        if (cfg.logo) {
+            prevLogo.src = cfg.logo;
+            prevLogo.style.display = 'block';
+        } else {
+            prevLogo.style.display = 'none';
+        }
+    }
+    if (prevShop) prevShop.textContent = cfg.shop_name;
+    if (prevSub) prevSub.textContent = cfg.subtitle;
+    if (prevAddr) {
+        prevAddr.textContent = cfg.address;
+        prevAddr.style.display = cfg.address ? 'block' : 'none';
+    }
+    if (prevFoot1) prevFoot1.textContent = cfg.footer_1;
+    if (prevFoot2) prevFoot2.textContent = cfg.footer_2;
+    if (prevPtsBox) prevPtsBox.style.display = cfg.show_points ? 'block' : 'none';
+}
+
+async function saveReceiptSettings(e) {
+    if (e && typeof e.preventDefault === 'function') {
+        e.preventDefault();
+    }
+
+    const btn = document.getElementById('btn-save-receipt-settings') || document.querySelector('#receipt-settings-form button[type="submit"]');
+    const cfg = getFormReceiptConfig();
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึกการตั้งค่า...';
+    }
+
+    try {
+        const { error } = await sb.from('settings').upsert({
+            setting_key: 'receipt_config',
+            setting_value: JSON.stringify(cfg)
+        });
+
+        if (error) {
+            console.error('Save receipt settings error:', error);
+            showToast(`บันทึกการตั้งค่าใบเสร็จไม่สำเร็จ: ${error.message}`);
+            return;
+        }
+
+        db.receipt_config = { ...cfg };
+        updateReceiptLivePreview();
+        showToast('บันทึกการตั้งค่ารูปแบบใบเสร็จเรียบร้อยแล้ว!');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าใบเสร็จ';
+        }
+    }
 }
 
 // --- หน้าขาย POS คาเฟ่: แสดงปุ่มเมนู & จัดการตะกร้า ---
@@ -1288,11 +1582,17 @@ function renderPOSCart() {
     const hasMember = Boolean(document.getElementById('pos-selected-user-id')?.value);
     const pointsEarned = (hasMember && totalAmount > 0) ? Math.floor(totalAmount / rate) : 0;
 
-    document.getElementById('pos-total-qty').textContent = `${totalQty} รายการ`;
-    document.getElementById('pos-total-amount').textContent = `${totalAmount.toLocaleString()} ฿`;
-    document.getElementById('pos-preview-points').textContent = hasMember
-        ? `+${pointsEarned} แต้ม`
-        : 'ไม่ระบุสมาชิก (0 แต้ม)';
+    const elQty = document.getElementById('pos-total-qty');
+    const elAmt = document.getElementById('pos-total-amount');
+    const elPts = document.getElementById('pos-preview-points');
+
+    if (elQty) elQty.textContent = `${totalQty} รายการ`;
+    if (elAmt) elAmt.textContent = `${totalAmount.toLocaleString()} ฿`;
+    if (elPts) {
+        elPts.textContent = hasMember
+            ? `+${pointsEarned} แต้ม`
+            : 'ไม่ระบุสมาชิก (0 แต้ม)';
+    }
 
     calculatePOSChange();
 }
@@ -1515,7 +1815,6 @@ async function handleCheckoutPOS() {
             return;
         }
 
-        // เปิดหน้าต่างสรุปออเดอร์ & ใบเสร็จรับเงินฝั่งแอดมิน
         openPOSReceiptModal({
             billId: insRes.data ? insRes.data.id : Date.now(),
             createdAt: insRes.data ? insRes.data.created_at : new Date().toISOString(),
@@ -1550,10 +1849,41 @@ async function handleCheckoutPOS() {
 }
 
 function openPOSReceiptModal(receiptData) {
+    const cfg = db.receipt_config || DEFAULT_RECEIPT_CONFIG;
+
     const bannerEl = document.getElementById('rec-ereceipt-banner');
     if (bannerEl) {
         bannerEl.style.display = receiptData.isNewPush ? 'block' : 'none';
     }
+
+    // แสดงค่าที่ปรับแต่งไว้บนหัวและท้ายใบเสร็จจริง
+    const logoImg = document.getElementById('rec-shop-logo');
+    if (logoImg) {
+        if (cfg.logo) {
+            logoImg.src = cfg.logo;
+            logoImg.style.display = 'block';
+        } else {
+            logoImg.style.display = 'none';
+        }
+    }
+
+    const shopNameEl = document.getElementById('rec-shop-name');
+    if (shopNameEl) shopNameEl.textContent = cfg.shop_name || DEFAULT_RECEIPT_CONFIG.shop_name;
+
+    const subEl = document.getElementById('rec-shop-subtitle');
+    if (subEl) subEl.textContent = cfg.subtitle || DEFAULT_RECEIPT_CONFIG.subtitle;
+
+    const addrEl = document.getElementById('rec-shop-address');
+    if (addrEl) {
+        addrEl.textContent = cfg.address || '';
+        addrEl.style.display = cfg.address ? 'block' : 'none';
+    }
+
+    const foot1El = document.getElementById('rec-footer-1');
+    if (foot1El) foot1El.textContent = cfg.footer_1 || DEFAULT_RECEIPT_CONFIG.footer_1;
+
+    const foot2El = document.getElementById('rec-footer-2');
+    if (foot2El) foot2El.textContent = cfg.footer_2 || DEFAULT_RECEIPT_CONFIG.footer_2;
 
     document.getElementById('rec-bill-no').textContent = `เลขที่บิล: ${formatTicketCode(receiptData.billId)}`;
     document.getElementById('rec-datetime').textContent = `วันที่: ${formatDateTime(receiptData.createdAt)}`;
@@ -1608,7 +1938,7 @@ function openPOSReceiptModal(receiptData) {
 
     const pointsBox = document.getElementById('rec-points-box');
     const balanceRow = document.getElementById('rec-points-balance-row');
-    if (receiptData.member) {
+    if (receiptData.member && cfg.show_points !== false) {
         pointsBox.style.display = 'block';
         document.getElementById('rec-points-earned').textContent = `+${receiptData.pointsEarned} แต้ม`;
         if (receiptData.newPointsBalance !== null && receiptData.newPointsBalance !== undefined) {
@@ -2570,7 +2900,6 @@ function startRealtimeSync() {
             } else {
                 renderMemberDashboard();
 
-                // หากมีบิลซื้อสินค้าใหม่ที่ผูกกับสมาชิกคนนี้ ให้ส่ง E-Receipt เด้งขึ้นหน้าจอทันที
                 if (
                     payload.table === 'point_history' &&
                     payload.eventType === 'INSERT' &&
