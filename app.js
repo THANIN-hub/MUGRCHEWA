@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบ POS คาเฟ่ & สะสมแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Touch POS + Payment + Receipt Print)
+   ไฟล์: app.js (เชื่อมต่อฐานข้อมูลกลาง Supabase + Touch POS + Payment + E-Receipt Print)
    ========================================================== */
 
 const SUPABASE_URL = 'https://ziaekbkkadjpmgmhqlyk.supabase.co';
@@ -200,6 +200,99 @@ function getMemberTierInfo(userId, currentPoints = 0) {
             nextText: `อีก ${diff} แต้ม ขึ้นระดับ SILVER`
         };
     }
+}
+
+// ==========================================================
+// ตัวช่วยแปลงรายละเอียดบิลใน point_history เพื่อสร้าง E-Receipt ย้อนหลัง
+// ==========================================================
+function parseHistoryNoteToReceipt(record) {
+    const rawNote = String(record.note || '').trim();
+    const totalAmount = Number(record.amount) || 0;
+    const pointsEarned = Number(record.points_earned) || 0;
+    const user = db.users.find(u => String(u.id) === String(record.user_id));
+    const member = (user && user.role === 'member') ? user : null;
+
+    let paymentMethod = 'cash';
+    let cleanBody = rawNote;
+
+    if (cleanBody.includes('โอนเงิน') || cleanBody.includes('QR')) {
+        paymentMethod = 'transfer';
+    }
+
+    // ตัดแท็กหัวข้อออก เช่น [เงินสด] หรือ [ลูกค้าทั่วไป | โอนเงิน / QR]
+    cleanBody = cleanBody.replace(/^\[.*?\]\s*/, '');
+
+    // แยกหมายเหตุในวงเล็บท้ายข้อความ (ถ้ามี)
+    let note = '';
+    const noteMatch = cleanBody.match(/\s*\(([^()]+)\)\s*$/);
+    if (noteMatch) {
+        note = noteMatch[1].trim();
+        cleanBody = cleanBody.slice(0, noteMatch.index).trim();
+    }
+
+    // แยกรายการสินค้า เช่น "ลาเต้เย็น x2, ชาไทยเย็น x1"
+    const items = [];
+    if (cleanBody) {
+        const parts = cleanBody.split(',').map(s => s.trim()).filter(Boolean);
+        parts.forEach(part => {
+            const m = part.match(/^(.*?)\s+x(\d+)$/i);
+            if (m) {
+                const itemName = m[1].trim();
+                const qty = parseInt(m[2], 10) || 1;
+                const prod = db.products.find(p => String(p.name || '').trim() === itemName);
+                const unitPrice = prod ? (Number(prod.price) || 0) : 0;
+                items.push({ name: itemName, price: unitPrice, qty });
+            } else {
+                items.push({ name: part, price: 0, qty: 1 });
+            }
+        });
+    }
+
+    // คำนวณราคาต่อรายการย้อนกลับหากเมนูถูกลบไปแล้ว
+    if (items.length === 1 && items[0].price === 0 && totalAmount > 0) {
+        items[0].price = totalAmount / items[0].qty;
+    } else if (items.length > 1) {
+        const knownSum = items.reduce((s, it) => s + (it.price * it.qty), 0);
+        if (knownSum === 0 && totalAmount > 0) {
+            items.forEach((it, idx) => {
+                it.price = idx === 0 ? (totalAmount / it.qty) : 0;
+            });
+        }
+    }
+
+    if (!items.length) {
+        items.push({
+            name: rawNote || 'รายการสั่งซื้อหน้าร้าน',
+            price: totalAmount,
+            qty: 1
+        });
+    }
+
+    return {
+        billId: record.id,
+        createdAt: record.created_at,
+        member,
+        items,
+        note,
+        totalAmount,
+        paymentMethod,
+        cashReceived: totalAmount,
+        changeAmount: 0,
+        pointsEarned,
+        newPointsBalance: member ? (Number(member.points) || 0) : null,
+        isFromHistory: true
+    };
+}
+
+function viewHistoryEReceipt(historyId, showNewBanner = false) {
+    const rec = db.point_history.find(h => String(h.id) === String(historyId));
+    if (!rec) {
+        showToast('ไม่พบข้อมูลบิลใบเสร็จรายการนี้');
+        return;
+    }
+    const receiptData = parseHistoryNoteToReceipt(rec);
+    receiptData.isNewPush = showNewBanner;
+    openPOSReceiptModal(receiptData);
 }
 
 // ==========================================================
@@ -487,7 +580,7 @@ function handleLogout() {
 }
 
 // ==========================================================
-// 1. ระบบสมาชิก (Member Functions: Barcode, Tier, Rewards, History)
+// 1. ระบบสมาชิก (Member Functions: Barcode, Tier, Rewards, History & E-Receipt)
 // ==========================================================
 function generateMemberBarcode(codeText) {
     const svgEl = document.getElementById('member-barcode');
@@ -966,18 +1059,28 @@ function renderMemberHistory() {
 
     earnTbody.innerHTML = myEarnings.length ? myEarnings.map(item => {
         const pts = Number(item.points_earned) || 0;
+        const amt = Number(item.amount) || 0;
         const ptsDisplay = pts >= 0
             ? `<strong style="color:var(--success-green);">+${pts} แต้ม</strong>`
             : `<strong style="color:var(--danger-red);">${pts} แต้ม</strong>`;
+
+        const receiptBtn = amt > 0
+            ? `<button type="button" class="btn btn-outline-sm" onclick="viewHistoryEReceipt(${Number(item.id)}, false)">
+                   <i class="fa-solid fa-receipt"></i> ดูใบเสร็จ
+               </button>`
+            : '<span class="text-muted">-</span>';
+
         return `
             <tr>
+                <td><strong>${formatTicketCode(item.id)}</strong></td>
                 <td>${formatDateTime(item.created_at)}</td>
                 <td>${escapeHTML(item.note || 'ซื้อสินค้าภายในร้าน')}</td>
-                <td>${(Number(item.amount) || 0).toLocaleString()} บาท</td>
+                <td><strong>${amt.toLocaleString()}</strong> บาท</td>
                 <td>${ptsDisplay}</td>
+                <td>${receiptBtn}</td>
             </tr>
         `;
-    }).join('') : '<tr><td colspan="4" style="text-align:center;">ยังไม่มีประวัติการสะสมแต้ม</td></tr>';
+    }).join('') : '<tr><td colspan="6" style="text-align:center;">ยังไม่มีประวัติการซื้อสินค้าและสะสมแต้ม</td></tr>';
 
     const redeemTbody = document.getElementById('mem-redeem-tbody');
     const myRedemptions = db.redemptions.filter(r => String(r.user_id) === String(currentUser.id));
@@ -1008,7 +1111,7 @@ function renderMemberHistory() {
 }
 
 // ==========================================================
-// 2. ระบบผู้ดูแลร้าน & หน้าขาย POS คาเฟ่ (Cafe Touch POS + Payment + Receipt)
+// 2. ระบบผู้ดูแลร้าน & หน้าขาย POS คาเฟ่ (Cafe Touch POS + Payment + E-Receipt)
 // ==========================================================
 async function switchAdminTab(tabName, btnElement) {
     document.querySelectorAll('#admin-dashboard .sub-nav-btn').forEach(b => b.classList.remove('active'));
@@ -1311,7 +1414,7 @@ function handlePOSMemberSearch(fromScannerEnter = false) {
         statusBox.innerHTML = `
             <div style="background: #DCFCE7; border: 1.5px solid #16A34A; border-radius: 10px; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span style="font-size: 11.5px; color: #166534; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> สมาชิก (${escapeHTML(tier.name)})</span>
+                    <span style="font-size: 11.5px; color: #166534; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> สมาชิก (${escapeHTML(tier.name)}) — ส่ง E-Receipt อัตโนมัติ</span>
                     <div style="font-size: 14.5px; font-weight: 700; color: #0F172A;">${escapeHTML(found.full_name)} (${escapeHTML(found.student_id || '-')})</div>
                 </div>
                 <div style="text-align: right;">
@@ -1339,7 +1442,7 @@ function handlePOSMemberSearch(fromScannerEnter = false) {
     renderPOSCart();
 }
 
-// --- ยืนยันชำระเงิน บันทึกออเดอร์ และเปิดหน้าต่างใบเสร็จ ---
+// --- ยืนยันชำระเงิน บันทึกออเดอร์ และเปิดหน้าต่างใบเสร็จ + ส่ง E-Receipt ให้สมาชิก ---
 async function handleCheckoutPOS() {
     if (!posCart.length) {
         showToast('กรุณาคลิกเลือกเมนูอย่างน้อย 1 รายการก่อนบันทึก');
@@ -1412,7 +1515,7 @@ async function handleCheckoutPOS() {
             return;
         }
 
-        // เปิดหน้าต่างสรุปออเดอร์ & ใบเสร็จรับเงิน
+        // เปิดหน้าต่างสรุปออเดอร์ & ใบเสร็จรับเงินฝั่งแอดมิน
         openPOSReceiptModal({
             billId: insRes.data ? insRes.data.id : Date.now(),
             createdAt: insRes.data ? insRes.data.created_at : new Date().toISOString(),
@@ -1426,6 +1529,12 @@ async function handleCheckoutPOS() {
             pointsEarned,
             newPointsBalance
         });
+
+        if (member) {
+            showToast(`บันทึกบิลและส่งใบเสร็จอิเล็กทรอนิกส์ให้คุณ ${member.full_name} เรียบร้อยแล้ว`);
+        } else {
+            showToast('บันทึกบิลและออกใบเสร็จเรียบร้อยแล้ว');
+        }
 
         clearPOSCart();
         clearPOSMember();
@@ -1441,6 +1550,11 @@ async function handleCheckoutPOS() {
 }
 
 function openPOSReceiptModal(receiptData) {
+    const bannerEl = document.getElementById('rec-ereceipt-banner');
+    if (bannerEl) {
+        bannerEl.style.display = receiptData.isNewPush ? 'block' : 'none';
+    }
+
     document.getElementById('rec-bill-no').textContent = `เลขที่บิล: ${formatTicketCode(receiptData.billId)}`;
     document.getElementById('rec-datetime').textContent = `วันที่: ${formatDateTime(receiptData.createdAt)}`;
 
@@ -1458,13 +1572,16 @@ function openPOSReceiptModal(receiptData) {
     }
 
     const tbody = document.getElementById('rec-items-tbody');
-    tbody.innerHTML = receiptData.items.map(item => `
-        <tr>
-            <td>${escapeHTML(item.name)}</td>
-            <td style="text-align: center;">x${item.qty}</td>
-            <td style="text-align: right;">${(item.price * item.qty).toLocaleString()} ฿</td>
-        </tr>
-    `).join('');
+    tbody.innerHTML = receiptData.items.map(item => {
+        const lineTotal = item.price * item.qty;
+        return `
+            <tr>
+                <td>${escapeHTML(item.name)}</td>
+                <td style="text-align: center;">x${item.qty}</td>
+                <td style="text-align: right;">${lineTotal > 0 ? lineTotal.toLocaleString() + ' ฿' : '-'}</td>
+            </tr>
+        `;
+    }).join('');
 
     const noteRow = document.getElementById('rec-note-row');
     if (receiptData.note) {
@@ -1479,7 +1596,7 @@ function openPOSReceiptModal(receiptData) {
 
     const cashRow = document.getElementById('rec-cash-row');
     const changeRow = document.getElementById('rec-change-row');
-    if (receiptData.paymentMethod === 'cash') {
+    if (receiptData.paymentMethod === 'cash' && !receiptData.isFromHistory) {
         cashRow.style.display = 'flex';
         changeRow.style.display = 'flex';
         document.getElementById('rec-cash-received').textContent = `${receiptData.cashReceived.toLocaleString()} ฿`;
@@ -1490,10 +1607,16 @@ function openPOSReceiptModal(receiptData) {
     }
 
     const pointsBox = document.getElementById('rec-points-box');
+    const balanceRow = document.getElementById('rec-points-balance-row');
     if (receiptData.member) {
         pointsBox.style.display = 'block';
         document.getElementById('rec-points-earned').textContent = `+${receiptData.pointsEarned} แต้ม`;
-        document.getElementById('rec-points-balance').textContent = `${receiptData.newPointsBalance.toLocaleString()} แต้ม`;
+        if (receiptData.newPointsBalance !== null && receiptData.newPointsBalance !== undefined) {
+            if (balanceRow) balanceRow.style.display = 'block';
+            document.getElementById('rec-points-balance').textContent = `${Number(receiptData.newPointsBalance).toLocaleString()} แต้ม`;
+        } else if (balanceRow) {
+            balanceRow.style.display = 'none';
+        }
     } else {
         pointsBox.style.display = 'none';
     }
@@ -2171,7 +2294,7 @@ async function deleteReward(rewardId) {
     showToast('ลบของรางวัลเรียบร้อยแล้ว');
 }
 
-// --- ส่วนรายงานสรุปยอดขายรายวัน/รายเดือน & Audit Log ---
+// --- ส่วนรายงานสรุปยอดขายรายวัน/รายเดือน & บิลขายย้อนหลัง & Audit Log ---
 function setReportPeriod(period) {
     reportPeriod = period;
     ['today', 'week', 'month', 'all'].forEach(p => {
@@ -2223,7 +2346,7 @@ function renderAdminReports() {
         .reduce((sum, h) => sum + (Number(h.points_earned) || 0), 0);
     const periodRedeemedCount = filteredRedemptions.length;
 
-    const recentSales = filteredHistory.filter(h => (Number(h.amount) || 0) > 0).slice(0, 15);
+    const recentSales = filteredHistory.filter(h => (Number(h.amount) || 0) > 0).slice(0, 25);
     const members = db.users.filter(u => u.role === 'member');
     const topMembers = [...members].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0)).slice(0, 5);
 
@@ -2251,16 +2374,18 @@ function renderAdminReports() {
         </div>
 
         <div style="margin-top: 22px;">
-            <h4 style="color:var(--primary-blue); margin-bottom:10px;"><i class="fa-solid fa-receipt"></i> บิลขายล่าสุด (${periodNames[reportPeriod]})</h4>
+            <h4 style="color:var(--primary-blue); margin-bottom:10px;"><i class="fa-solid fa-receipt"></i> บิลขายล่าสุด & ใบเสร็จย้อนหลัง (${periodNames[reportPeriod]})</h4>
             <div class="table-responsive">
                 <table class="data-table">
                     <thead>
                         <tr>
+                            <th>เลขที่บิล</th>
                             <th>วัน-เวลา</th>
                             <th>ลูกค้า</th>
                             <th>รายการที่สั่ง</th>
                             <th>ยอดรวม</th>
                             <th>แต้มที่ได้</th>
+                            <th>ใบเสร็จ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2271,14 +2396,20 @@ function renderAdminReports() {
                                 : 'ลูกค้าทั่วไป';
                             return `
                                 <tr>
+                                    <td><strong>${formatTicketCode(s.id)}</strong></td>
                                     <td>${formatDateTime(s.created_at)}</td>
                                     <td>${customerLabel}</td>
                                     <td>${escapeHTML(s.note || '-')}</td>
                                     <td><strong>${(Number(s.amount) || 0).toLocaleString()} ฿</strong></td>
                                     <td>+${Number(s.points_earned) || 0} แต้ม</td>
+                                    <td>
+                                        <button type="button" class="btn btn-outline-sm" onclick="viewHistoryEReceipt(${Number(s.id)}, false)">
+                                            <i class="fa-solid fa-print"></i> ดู / พิมพ์ซ้ำ
+                                        </button>
+                                    </td>
                                 </tr>
                             `;
-                        }).join('') : '<tr><td colspan="5" style="text-align:center; color: var(--text-muted);">ยังไม่มีรายการขายในช่วงเวลานี้</td></tr>'}
+                        }).join('') : '<tr><td colspan="7" style="text-align:center; color: var(--text-muted);">ยังไม่มีรายการขายในช่วงเวลานี้</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -2385,7 +2516,7 @@ document.addEventListener('click', (e) => {
 });
 
 // ==========================================================
-// ระบบซิงก์ข้อมูลอัตโนมัติแบบเรียลไทม์ (Supabase Realtime)
+// ระบบซิงก์ข้อมูลอัตโนมัติแบบเรียลไทม์ (Supabase Realtime + Push E-Receipt)
 // ==========================================================
 function startRealtimeSync() {
     if (realtimeChannel) return;
@@ -2438,11 +2569,24 @@ function startRealtimeSync() {
                 }
             } else {
                 renderMemberDashboard();
-                const updatedUser = db.users.find(u => String(u.id) === String(currentUser.id));
-                const newPts = updatedUser ? (Number(updatedUser.points) || 0) : oldPoints;
-                if (updatedUser && newPts > oldPoints) {
-                    const diff = newPts - oldPoints;
-                    showToast(`คุณได้รับเพิ่ม +${diff} แต้ม!`);
+
+                // หากมีบิลซื้อสินค้าใหม่ที่ผูกกับสมาชิกคนนี้ ให้ส่ง E-Receipt เด้งขึ้นหน้าจอทันที
+                if (
+                    payload.table === 'point_history' &&
+                    payload.eventType === 'INSERT' &&
+                    payload.new &&
+                    String(payload.new.user_id) === String(currentUser.id) &&
+                    (Number(payload.new.amount) || 0) > 0
+                ) {
+                    viewHistoryEReceipt(payload.new.id, true);
+                    showToast(`ได้รับใบเสร็จอิเล็กทรอนิกส์ (${formatTicketCode(payload.new.id)}) และรับ +${Number(payload.new.points_earned) || 0} แต้ม!`);
+                } else {
+                    const updatedUser = db.users.find(u => String(u.id) === String(currentUser.id));
+                    const newPts = updatedUser ? (Number(updatedUser.points) || 0) : oldPoints;
+                    if (updatedUser && newPts > oldPoints) {
+                        const diff = newPts - oldPoints;
+                        showToast(`คุณได้รับเพิ่ม +${diff} แต้ม!`);
+                    }
                 }
             }
         })

@@ -92,12 +92,12 @@
         <!-- แถบนำทางด้านบน (Navbar) -->
         <header class="navbar">
             <div class="nav-brand">
-                <i class="fa-solid fa-mug-hot"></i>
+                <div class="nav-logo-pill"><i class="fa-solid fa-mug-hot"></i></div>
                 <span>ร้านมักอาชีวะ</span>
                 <span class="badge-role" id="nav-user-role">สมาชิก</span>
             </div>
             <div class="nav-user">
-                <span id="nav-user-name">ชื่อผู้ใช้งาน</span>
+                <span id="nav-user-name" class="nav-username-text">ชื่อผู้ใช้งาน</span>
                 <button type="button" class="btn btn-outline-sm" onclick="refreshCurrentView()" title="ซิงก์ข้อมูลล่าสุด">
                     <i class="fa-solid fa-rotate"></i>
                 </button>
@@ -113,7 +113,6 @@
         <main id="member-dashboard" class="container hidden">
             <!-- บัตรสมาชิกดิจิทัล & ยอดแต้มคงเหลือ -->
             <div class="member-hero-card">
-                <!-- ฝั่งซ้าย: ข้อมูลสมาชิก & บาร์โค้ด -->
                 <div class="hero-info">
                     <div>
                         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;">
@@ -128,14 +127,12 @@
                         <small id="mem-tier-next-text" style="display: block; color: #FDE68A; font-size: 12.5px; margin-top: 2px;"></small>
                     </div>
 
-                    <!-- กล่องแสดงบาร์โค้ดรหัสสมาชิกสำหรับยิงสแกนหน้าร้าน -->
                     <div class="barcode-card-box" onclick="openMemberBarcodeModal()" title="คลิกเพื่อขยายบาร์โค้ดให้พนักงานสแกน">
                         <svg id="member-barcode"></svg>
                         <span><i class="fa-solid fa-expand"></i> แตะเพื่อขยายบาร์โค้ดสแกนสะสมแต้ม</span>
                     </div>
                 </div>
 
-                <!-- ฝั่งขวา: การ์ดสีเหลืองแสดงแต้มสะสมปัจจุบัน + แถบความคืบหน้า -->
                 <div class="hero-points">
                     <div class="points-top-row">
                         <div class="points-coin-icon">
@@ -151,7 +148,6 @@
                         </div>
                     </div>
 
-                    <!-- แถบเป้าหมายแต้มถัดไป (Progress Bar) -->
                     <div class="tier-progress-wrap">
                         <div class="tier-progress-label">
                             <span id="mem-goal-text">กำลังคำนวณเป้าหมาย...</span>
@@ -173,7 +169,7 @@
                     <i class="fa-solid fa-gift"></i> แลกของรางวัล
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchMemberTab('earn-history', this)">
-                    <i class="fa-solid fa-clock-rotate-left"></i> ประวัติการสะสมแต้ม
+                    <i class="fa-solid fa-receipt"></i> ประวัติการซื้อ & ใบเสร็จ
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchMemberTab('redeem-history', this)">
                     <i class="fa-solid fa-ticket"></i> ประวัติการแลกของรางวัล
@@ -195,18 +191,23 @@
                 <div id="member-rewards-grid" class="rewards-grid"></div>
             </div>
 
-            <!-- แท็บประวัติการสะสมแต้ม -->
+            <!-- แท็บประวัติการซื้อสินค้า สะสมแต้ม และใบเสร็จอิเล็กทรอนิกส์ -->
             <div id="mem-tab-earn-history" class="tab-content">
                 <div class="card-box">
-                    <h3><i class="fa-solid fa-coins"></i> ประวัติการซื้อสินค้าและได้รับแต้ม</h3>
+                    <div class="card-header-flex">
+                        <h3 style="margin-bottom: 0;"><i class="fa-solid fa-receipt"></i> ประวัติการซื้อสินค้า สะสมแต้ม และใบเสร็จอิเล็กทรอนิกส์</h3>
+                        <span class="text-muted">คลิกปุ่ม "ดูใบเสร็จ" เพื่อเปิด E-Receipt หรือสั่งพิมพ์</span>
+                    </div>
                     <div class="table-responsive">
                         <table class="data-table">
                             <thead>
                                 <tr>
+                                    <th>เลขที่บิล</th>
                                     <th>วัน-เวลา</th>
                                     <th>รายการที่สั่ง / หมายเหตุ</th>
                                     <th>ยอดซื้อ (บาท)</th>
-                                    <th>แต้มที่เปลี่ยนแปลง</th>
+                                    <th>แต้มที่ได้รับ</th>
+                                    <th>ใบเสร็จอิเล็กทรอนิกส์</th>
                                 </tr>
                             </thead>
                             <tbody id="mem-earn-tbody"></tbody>
@@ -218,7 +219,7 @@
             <!-- แท็บประวัติการแลกของรางวัล -->
             <div id="mem-tab-redeem-history" class="tab-content">
                 <div class="card-box">
-                    <h3><i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัลและหลักฐาน</h3>
+                    <h3><i class="fa-solid fa-ticket"></i> ประวัติการแลกของรางวัลและหลักฐาน</h3>
                     <div class="table-responsive">
                         <table class="data-table">
                             <thead>
@@ -282,25 +283,28 @@
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('products', this)">
                     <i class="fa-solid fa-mug-saucer"></i> จัดการเมนูร้าน
                 </button>
+                <button type="button" class="sub-nav-btn" onclick="switchAdminTab('reports', this)">
+                    <i class="fa-solid fa-file-invoice-dollar"></i> ประวัติบิล & รายงาน
+                </button>
+                <button type="button" class="sub-nav-btn" onclick="switchAdminTab('receipt-settings', this)">
+                    <i class="fa-solid fa-sliders"></i> ตั้งค่าใบเสร็จ
+                </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('redemptions', this)">
-                    <i class="fa-solid fa-receipt"></i> ประวัติการแลกรางวัล
+                    <i class="fa-solid fa-ticket"></i> ประวัติแลกรางวัล
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('promotions', this)">
-                    <i class="fa-solid fa-bullhorn"></i> จัดการโปรโมชั่น
+                    <i class="fa-solid fa-bullhorn"></i> โปรโมชั่น
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('members', this)">
-                    <i class="fa-solid fa-user-gear"></i> จัดการสมาชิก
+                    <i class="fa-solid fa-user-gear"></i> สมาชิก
                 </button>
                 <button type="button" class="sub-nav-btn" onclick="switchAdminTab('rewards', this)">
-                    <i class="fa-solid fa-boxes-stacked"></i> จัดการของรางวัล
-                </button>
-                <button type="button" class="sub-nav-btn" onclick="switchAdminTab('reports', this)">
-                    <i class="fa-solid fa-chart-pie"></i> รายงานสรุป
+                    <i class="fa-solid fa-boxes-stacked"></i> ของรางวัล
                 </button>
             </div>
 
             <!-- ==========================================
-                 แท็บ 1: หน้าขาย POS คาเฟ่ (ปุ่มคลิกเลือกเมนู + ตั้งค่าแต้ม + ชำระเงิน + ปริ้นใบเสร็จ)
+                 แท็บ 1: หน้าขาย POS คาเฟ่
                  ========================================== -->
             <div id="admin-tab-pos" class="tab-content active">
                 <div class="pos-cafe-layout">
@@ -314,16 +318,13 @@
                                 </button>
                             </div>
 
-                            <!-- แถบหมวดหมู่เมนู -->
                             <div id="pos-category-tabs" class="pos-category-bar"></div>
-
-                            <!-- ตารางปุ่มเมนูแบบสัมผัส -->
                             <div id="pos-menu-grid" class="pos-menu-grid"></div>
                         </div>
 
-                        <!-- กล่องตั้งค่าอัตราคำนวณแต้มสะสม (ย้ายมาไว้ในหน้า POS) -->
+                        <!-- กล่องตั้งค่าอัตราคำนวณแต้มสะสม -->
                         <div class="card-box">
-                            <h3 style="margin-bottom: 10px;"><i class="fa-solid fa-sliders"></i> ตั้งค่าอัตราคำนวณแต้มสะสม</h3>
+                            <h3 style="margin-bottom: 10px;"><i class="fa-solid fa-coins"></i> ตั้งค่าอัตราคำนวณแต้มสะสม</h3>
                             <form id="rate-settings-form" onsubmit="handleUpdateRate(event)" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
                                 <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
                                     <label for="setting-baht-per-point">ยอดซื้อกี่บาท = 1 แต้ม (ปัจจุบัน: ทุก <span id="pos-current-rate-label">20</span> บาท = 1 แต้ม)</label>
@@ -347,10 +348,10 @@
 
                         <!-- ค้นหาหรือยิงบาร์โค้ดสมาชิก -->
                         <div class="form-group" style="margin-bottom: 12px;">
-                            <label for="pos-member-search" style="font-size: 13px;">สมาชิกสะสมแต้ม (สแกนบาร์โค้ด หรือพิมพ์เบอร์โทร - เว้นว่างได้)</label>
+                            <label for="pos-member-search" style="font-size: 13px;">สมาชิกสะสมแต้ม & ส่ง E-Receipt (สแกนบาร์โค้ด หรือพิมพ์เบอร์โทร)</label>
                             <div class="pos-barcode-input-wrap">
                                 <i class="fa-solid fa-user-tag barcode-prefix-icon"></i>
-                                <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="ระบุเบอร์โทรสมาชิกเพื่อรับแต้ม (ถ้าไม่เป็นสมาชิกไม่ต้องใส่)" oninput="handlePOSMemberSearch()" onkeydown="handlePOSBarcodeKeydown(event)" autocomplete="off">
+                                <input type="text" id="pos-member-search" list="pos-members-datalist" placeholder="ระบุเบอร์โทรสมาชิกเพื่อรับแต้ม & E-Receipt (เว้นว่างได้)" oninput="handlePOSMemberSearch()" onkeydown="handlePOSBarcodeKeydown(event)" autocomplete="off">
                                 <button type="button" class="btn-clear-pos" onclick="clearPOSMember()" title="ล้างข้อมูลสมาชิก">
                                     <i class="fa-solid fa-xmark"></i>
                                 </button>
@@ -368,7 +369,7 @@
                             </div>
                         </div>
 
-                        <!-- หมายเหตุเพิ่มเติม (เช่น หวานน้อย / แยกน้ำแข็ง) -->
+                        <!-- หมายเหตุเพิ่มเติม -->
                         <div class="form-group" style="margin-top: 10px; margin-bottom: 12px;">
                             <input type="text" id="pos-note" placeholder="หมายเหตุออเดอร์ เช่น หวานน้อย, แยกน้ำแข็ง (ไม่บังคับ)">
                         </div>
@@ -401,7 +402,6 @@
                                 </button>
                             </div>
 
-                            <!-- ส่วนรับเงินสดและคำนวณเงินทอน -->
                             <div id="pos-cash-section" style="margin-top: 10px;">
                                 <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
                                     <button type="button" class="btn btn-outline-sm" onclick="setExactCash()">รับพอดี</button>
@@ -418,21 +418,20 @@
                                 </div>
                             </div>
 
-                            <!-- ส่วนโอนเงิน / สแกน QR -->
                             <div id="pos-transfer-section" class="hidden" style="margin-top: 10px; background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 10px; padding: 10px; text-align: center; font-size: 13px; color: var(--primary-blue);">
                                 <i class="fa-solid fa-circle-check"></i> ชำระผ่านการโอนเงิน / สแกน QR เต็มจำนวนตามยอดบิล
                             </div>
                         </div>
 
                         <button type="button" id="btn-pos-checkout" class="btn btn-primary btn-block" style="padding: 13px; font-size: 16px;" onclick="handleCheckoutPOS()">
-                            <i class="fa-solid fa-print"></i> ยืนยันชำระเงิน & ออกใบเสร็จ
+                            <i class="fa-solid fa-print"></i> ยืนยันชำระเงิน & ส่งใบเสร็จ
                         </button>
                     </div>
                 </div>
             </div>
 
             <!-- ==========================================
-                 แท็บ 2: จัดการเมนูอาหาร/เครื่องดื่มของร้าน (Admin CRUD)
+                 แท็บ 2: จัดการเมนูอาหาร/เครื่องดื่มของร้าน
                  ========================================== -->
             <div id="admin-tab-products" class="tab-content">
                 <div class="card-box">
@@ -462,10 +461,177 @@
                 </div>
             </div>
 
-            <!-- แท็บ 3: ประวัติการแลกของรางวัล -->
+            <!-- ==========================================
+                 แท็บ 3: รายงานสรุปผล & บิลขายย้อนหลัง
+                 ========================================== -->
+            <div id="admin-tab-reports" class="tab-content">
+                <div class="card-box">
+                    <div class="card-header-flex">
+                        <h3><i class="fa-solid fa-chart-line"></i> ประวัติบิลขาย รายงานสรุปยอด และ Audit Log</h3>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button type="button" id="rep-filter-today" class="btn btn-primary" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('today')">วันนี้</button>
+                            <button type="button" id="rep-filter-week" class="btn btn-outline" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('week')">7 วันล่าสุด</button>
+                            <button type="button" id="rep-filter-month" class="btn btn-outline" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('month')">เดือนนี้</button>
+                            <button type="button" id="rep-filter-all" class="btn btn-outline" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('all')">ทั้งหมด</button>
+                            <button type="button" class="btn btn-secondary" style="padding: 6px 12px; font-size: 13px;" onclick="exportReportCSV()">
+                                <i class="fa-solid fa-file-csv"></i> ส่งออก CSV
+                            </button>
+                        </div>
+                    </div>
+                    <div id="report-summary-content" class="report-box"></div>
+                </div>
+            </div>
+
+            <!-- ==========================================
+                 แท็บ 4: ตั้งค่าปรับแต่งรายละเอียดใบเสร็จ (Receipt Customizer)
+                 ========================================== -->
+            <div id="admin-tab-receipt-settings" class="tab-content">
+                <div class="pos-cafe-layout">
+                    <!-- ฝั่งซ้าย: ฟอร์มตั้งค่าใบเสร็จ -->
+                    <div class="card-box">
+                        <h3><i class="fa-solid fa-sliders"></i> ปรับแต่งรูปแบบและข้อความบนใบเสร็จ</h3>
+                        <form id="receipt-settings-form" onsubmit="saveReceiptSettings(event)">
+                            <div class="form-group">
+                                <label>โลโก้หัวใบเสร็จ (ไม่บังคับ - อัปโหลดรูปโลโก้ร้าน)</label>
+                                <input type="hidden" id="modal-reclogo-image">
+                                <div id="reclogo-dropzone" class="image-dropzone">
+                                    <i class="fa-solid fa-image"></i>
+                                    <p>คลิกเพื่ออัปโหลดโลโก้ร้าน หรือลากไฟล์มาวางที่นี่</p>
+                                    <small>แนะนำรูปสี่เหลี่ยมจัตุรัสหรือแนวนอนพื้นหลังขาว (ย่อขนาดอัตโนมัติ)</small>
+                                    <input type="file" id="reclogo-file-input" accept="image/*" style="display: none;">
+                                </div>
+                                <div id="reclogo-preview-box" class="dropzone-preview-box" style="display: none;">
+                                    <img id="reclogo-preview-img" src="" alt="โลโก้ใบเสร็จ" style="max-height: 90px; width: auto; margin: 0 auto;">
+                                    <br>
+                                    <button type="button" class="btn btn-danger" style="padding: 4px 10px; font-size: 12px; margin-top: 8px;" onclick="clearReceiptLogo()">
+                                        <i class="fa-solid fa-trash"></i> ลบโลโก้
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="rec-cfg-shop-name">ชื่อร้านบนหัวใบเสร็จ</label>
+                                <input type="text" id="rec-cfg-shop-name" placeholder="เช่น ร้านมักอาชีวะ (MUG R-CHEWA)" oninput="updateReceiptLivePreview()" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="rec-cfg-subtitle">คำโปรย / ประเภทเอกสารใต้ชื่อร้าน</label>
+                                <input type="text" id="rec-cfg-subtitle" placeholder="เช่น ใบเสร็จรับเงินอิเล็กทรอนิกส์ / ใบสรุปรายการ" oninput="updateReceiptLivePreview()">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="rec-cfg-address">ที่อยู่ร้าน / เบอร์โทรติดต่อ / เลขประจำตัวผู้เสียภาษี (ไม่บังคับ)</label>
+                                <input type="text" id="rec-cfg-address" placeholder="เช่น วิทยาลัยอาชีวศึกษา โทร. 08x-xxx-xxxx" oninput="updateReceiptLivePreview()">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="rec-cfg-footer-1">คำลงท้ายใบเสร็จ (บรรทัดที่ 1)</label>
+                                <input type="text" id="rec-cfg-footer-1" placeholder="เช่น ขอบคุณที่ใช้บริการครับ" oninput="updateReceiptLivePreview()">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="rec-cfg-footer-2">คำลงท้ายใบเสร็จ (บรรทัดที่ 2 - เช่น รหัส Wi-Fi / ช่องทางติดตาม)</label>
+                                <input type="text" id="rec-cfg-footer-2" placeholder="เช่น Wi-Fi: MUG_FREE | Pass: 12345678" oninput="updateReceiptLivePreview()">
+                            </div>
+
+                            <div class="form-group">
+                                <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="rec-cfg-show-points" checked style="width: auto; accent-color: var(--primary-blue);" onchange="updateReceiptLivePreview()">
+                                    แสดงกล่องสรุปแต้มสะสมของสมาชิกท้ายใบเสร็จ
+                                </label>
+                            </div>
+
+                            <button type="submit" id="btn-save-rec-settings" class="btn btn-primary btn-block">
+                                <i class="fa-solid fa-floppy-disk"></i> บันทึกการตั้งค่าใบเสร็จ
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- ฝั่งขวา: ตัวอย่างใบเสร็จแบบเรียลไทม์ (Live Receipt Preview) -->
+                    <div class="card-box" style="background: #F8FAFC;">
+                        <h3><i class="fa-solid fa-eye"></i> ตัวอย่างใบเสร็จจริง (Live Preview)</h3>
+                        <p class="text-muted" style="margin-bottom: 14px;">หน้าตาใบเสร็จที่จะส่งให้ลูกค้าทางออนไลน์และพิมพ์ออกเครื่องพิมพ์</p>
+
+                        <div class="receipt-paper" style="max-width: 340px; margin: 0 auto;">
+                            <div class="receipt-header">
+                                <img id="prev-rec-logo" src="" alt="โลโก้ร้าน" class="receipt-logo-img" style="display: none;">
+                                <h4 id="prev-rec-shop-name">ร้านมักอาชีวะ (MUG R-CHEWA)</h4>
+                                <p id="prev-rec-subtitle">ใบเสร็จรับเงินอิเล็กทรอนิกส์ / ใบสรุปรายการ</p>
+                                <p id="prev-rec-address" style="font-size: 11.5px; color: #64748B; display: none;"></p>
+                                <small>เลขที่บิล: #0099</small><br>
+                                <small>วันที่: 2026-11-28 14:30</small>
+                            </div>
+
+                            <div class="receipt-divider"></div>
+
+                            <div class="receipt-customer">
+                                <div><strong>ลูกค้า:</strong> คุณสมชาย ใจดี</div>
+                                <div><strong>เบอร์สมาชิก:</strong> 0812345678</div>
+                            </div>
+
+                            <div class="receipt-divider"></div>
+
+                            <table class="receipt-items-table">
+                                <thead>
+                                    <tr>
+                                        <th style="text-align: left;">รายการ</th>
+                                        <th style="text-align: center;">จำนวน</th>
+                                        <th style="text-align: right;">รวม</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>ลาเต้เย็น</td>
+                                        <td style="text-align: center;">x1</td>
+                                        <td style="text-align: right;">50 ฿</td>
+                                    </tr>
+                                    <tr>
+                                        <td>ขนมปังปิ้งเนยนม</td>
+                                        <td style="text-align: center;">x1</td>
+                                        <td style="text-align: right;">25 ฿</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <div class="receipt-divider"></div>
+
+                            <div class="receipt-totals">
+                                <div class="rec-row rec-grand-total">
+                                    <span>ยอดรวมสุทธิ</span>
+                                    <span>75 ฿</span>
+                                </div>
+                                <div class="rec-row">
+                                    <span>ช่องทางชำระเงิน</span>
+                                    <span>เงินสด</span>
+                                </div>
+                                <div class="rec-row">
+                                    <span>รับเงินสด</span>
+                                    <span>100 ฿</span>
+                                </div>
+                                <div class="rec-row">
+                                    <span>เงินทอน</span>
+                                    <span>25 ฿</span>
+                                </div>
+                            </div>
+
+                            <div id="prev-rec-points-box" class="receipt-points-box">
+                                <div>แต้มที่ได้รับบิลนี้: <strong>+3 แต้ม</strong></div>
+                                <div>แต้มสะสมคงเหลือ: <strong>28 แต้ม</strong></div>
+                            </div>
+
+                            <div class="receipt-footer">
+                                <p id="prev-rec-footer-1">ขอบคุณที่ใช้บริการครับ</p>
+                                <small id="prev-rec-footer-2">ใบเสร็จอิเล็กทรอนิกส์จากระบบ POS ร้านมักอาชีวะ</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- แท็บ 5: ประวัติการแลกของรางวัล -->
             <div id="admin-tab-redemptions" class="tab-content">
                 <div class="card-box">
-                    <h3><i class="fa-solid fa-receipt"></i> ประวัติการแลกของรางวัลของสมาชิก (ตัดแต้มอัตโนมัติ)</h3>
+                    <h3><i class="fa-solid fa-ticket"></i> ประวัติการแลกของรางวัลของสมาชิก (ตัดแต้มอัตโนมัติ)</h3>
                     <div class="table-responsive">
                         <table class="data-table">
                             <thead>
@@ -484,7 +650,7 @@
                 </div>
             </div>
 
-            <!-- แท็บ 4: จัดการแบนเนอร์โปรโมชั่น -->
+            <!-- แท็บ 6: จัดการแบนเนอร์โปรโมชั่น -->
             <div id="admin-tab-promotions" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
@@ -497,7 +663,7 @@
                 </div>
             </div>
 
-            <!-- แท็บ 5: จัดการข้อมูลสมาชิก (CRUD) -->
+            <!-- แท็บ 7: จัดการข้อมูลสมาชิก (CRUD) -->
             <div id="admin-tab-members" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
@@ -526,7 +692,7 @@
                 </div>
             </div>
 
-            <!-- แท็บ 6: จัดการของรางวัล (CRUD) -->
+            <!-- แท็บ 8: จัดการของรางวัล (CRUD) -->
             <div id="admin-tab-rewards" class="tab-content">
                 <div class="card-box">
                     <div class="card-header-flex">
@@ -538,43 +704,30 @@
                     <div id="admin-rewards-grid" class="rewards-grid"></div>
                 </div>
             </div>
-
-            <!-- แท็บ 7: รายงานสรุปผล -->
-            <div id="admin-tab-reports" class="tab-content">
-                <div class="card-box">
-                    <div class="card-header-flex">
-                        <h3><i class="fa-solid fa-chart-line"></i> รายงานสรุปยอดขาย แต้มสะสม และประวัติแก้แต้ม (Audit Log)</h3>
-                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                            <button type="button" id="rep-filter-today" class="btn btn-primary" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('today')">วันนี้</button>
-                            <button type="button" id="rep-filter-week" class="btn btn-outline" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('week')">7 วันล่าสุด</button>
-                            <button type="button" id="rep-filter-month" class="btn btn-outline" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('month')">เดือนนี้</button>
-                            <button type="button" id="rep-filter-all" class="btn btn-outline" style="padding: 6px 12px; font-size: 13px;" onclick="setReportPeriod('all')">ทั้งหมด</button>
-                            <button type="button" class="btn btn-secondary" style="padding: 6px 12px; font-size: 13px;" onclick="exportReportCSV()">
-                                <i class="fa-solid fa-file-csv"></i> ส่งออก CSV
-                            </button>
-                        </div>
-                    </div>
-                    <div id="report-summary-content" class="report-box"></div>
-                </div>
-            </div>
         </main>
     </div>
 
     <!-- ==========================================
-         Modal สรุปออเดอร์ & พิมพ์ใบเสร็จหน้าร้าน (POS Receipt Modal)
+         Modal สรุปออเดอร์ & ใบเสร็จอิเล็กทรอนิกส์ (POS E-Receipt Modal)
          ========================================== -->
     <div id="pos-receipt-modal" class="modal hidden" role="dialog" aria-modal="true">
-        <div class="modal-content" style="max-width: 380px;">
+        <div class="modal-content" style="max-width: 395px;">
             <div class="modal-header no-print">
-                <h3><i class="fa-solid fa-receipt"></i> สรุปออเดอร์ & ใบเสร็จรับเงิน</h3>
+                <h3 id="rec-modal-title"><i class="fa-solid fa-receipt"></i> ใบเสร็จอิเล็กทรอนิกส์ (E-Receipt)</h3>
                 <button type="button" class="close-btn" onclick="closeModal('pos-receipt-modal')" aria-label="ปิด">&times;</button>
+            </div>
+
+            <div id="rec-ereceipt-banner" class="no-print" style="display: none; background: #DCFCE7; color: #166534; padding: 9px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 12px; text-align: center; border: 1px solid #86EFAC;">
+                <i class="fa-solid fa-circle-check"></i> คุณได้รับใบเสร็จอิเล็กทรอนิกส์จากการสั่งซื้อหน้าร้านแล้ว!
             </div>
 
             <!-- พื้นที่ใบเสร็จสำหรับสั่งพิมพ์ (Printable Receipt Area) -->
             <div id="printable-receipt-area" class="receipt-paper">
                 <div class="receipt-header">
-                    <h4>ร้านมักอาชีวะ (MUG R-CHEWA)</h4>
-                    <p>ใบเสร็จรับเงินอย่างย่อ / ใบสรุปรายการ</p>
+                    <img id="rec-logo-img" src="" alt="โลโก้ร้าน" class="receipt-logo-img" style="display: none;">
+                    <h4 id="rec-shop-name">ร้านมักอาชีวะ (MUG R-CHEWA)</h4>
+                    <p id="rec-shop-subtitle">ใบเสร็จรับเงินอิเล็กทรอนิกส์ / ใบสรุปรายการ</p>
+                    <p id="rec-shop-address" style="font-size: 11.5px; color: #64748B; display: none;"></p>
                     <small id="rec-bill-no">เลขที่บิล: #0000</small><br>
                     <small id="rec-datetime">วันที่: -</small>
                 </div>
@@ -608,7 +761,7 @@
                 <div class="receipt-totals">
                     <div class="rec-row rec-grand-total">
                         <span>ยอดรวมสุทธิ</span>
-                        <span id="rec-total-amount">0.00 ฿</span>
+                        <span id="rec-total-amount">0 ฿</span>
                     </div>
                     <div class="rec-row">
                         <span>ช่องทางชำระเงิน</span>
@@ -616,28 +769,28 @@
                     </div>
                     <div class="rec-row" id="rec-cash-row">
                         <span>รับเงินสด</span>
-                        <span id="rec-cash-received">0.00 ฿</span>
+                        <span id="rec-cash-received">0 ฿</span>
                     </div>
                     <div class="rec-row" id="rec-change-row">
                         <span>เงินทอน</span>
-                        <span id="rec-change-amount">0.00 ฿</span>
+                        <span id="rec-change-amount">0 ฿</span>
                     </div>
                 </div>
 
                 <div id="rec-points-box" class="receipt-points-box" style="display: none;">
                     <div>แต้มที่ได้รับบิลนี้: <strong id="rec-points-earned">+0 แต้ม</strong></div>
-                    <div>แต้มสะสมคงเหลือ: <strong id="rec-points-balance">0 แต้ม</strong></div>
+                    <div id="rec-points-balance-row">แต้มสะสมคงเหลือปัจจุบัน: <strong id="rec-points-balance">0 แต้ม</strong></div>
                 </div>
 
                 <div class="receipt-footer">
-                    <p>ขอบคุณที่ใช้บริการครับ</p>
-                    <small>โปรดเก็บใบเสร็จไว้เป็นหลักฐาน</small>
+                    <p id="rec-footer-1">ขอบคุณที่ใช้บริการครับ</p>
+                    <small id="rec-footer-2">ใบเสร็จอิเล็กทรอนิกส์จากระบบ POS ร้านมักอาชีวะ</small>
                 </div>
             </div>
 
             <div class="no-print" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px;">
                 <button type="button" class="btn btn-primary" onclick="printPOSReceipt()">
-                    <i class="fa-solid fa-print"></i> ปริ้นใบเสร็จ
+                    <i class="fa-solid fa-print"></i> ปริ้น / บันทึก PDF
                 </button>
                 <button type="button" class="btn btn-outline" onclick="closeModal('pos-receipt-modal')">
                     ปิดหน้าต่าง
@@ -806,7 +959,7 @@
     </div>
 
     <!-- ==========================================
-         Modal ลืมรหัสผ่าน (รีเซ็ตและตั้งรหัสผ่านใหม่ทันที)
+         Modal ลืมรหัสผ่าน
          ========================================== -->
     <div id="forgot-modal" class="modal hidden" role="dialog" aria-modal="true">
         <div class="modal-content">

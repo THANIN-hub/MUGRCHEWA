@@ -1,6 +1,6 @@
 /* ==========================================================
    ระบบ POS คาเฟ่ & สะสมแต้มสมาชิกดิจิทัล ร้านมักอาชีวะ
-   style.css
+   style.css - Clean Modern Cafe POS & E-Receipt UI
    ========================================================== */
 
 :root {
@@ -18,9 +18,9 @@
     --success-green: #16A34A;
     --danger-red: #DC2626;
     --radius-md: 12px;
-    --radius-lg: 16px;
-    --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
-    --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+    --radius-lg: 18px;
+    --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow-md: 0 10px 28px rgba(15, 23, 42, 0.08);
 }
 
 * {
@@ -55,18 +55,18 @@ body {
     align-items: center;
     justify-content: center;
     padding: 20px;
-    background: linear-gradient(180deg, #EFF6FF 0%, #F1F5F9 100%);
+    background: radial-gradient(circle at top, #DBEAFE 0%, #F1F5F9 65%);
 }
 
 .auth-card {
     background: var(--surface-white);
     width: 100%;
     max-width: 430px;
-    border-radius: 20px;
-    padding: 32px 28px;
+    border-radius: 22px;
+    padding: 34px 28px;
     box-shadow: var(--shadow-md);
     border: 1px solid var(--border-color);
-    border-top: 5px solid var(--primary-blue);
+    border-top: 6px solid var(--primary-blue);
 }
 
 .brand-header {
@@ -75,21 +75,21 @@ body {
 }
 
 .brand-logo {
-    width: 60px;
-    height: 60px;
-    background: var(--primary-blue);
+    width: 64px;
+    height: 64px;
+    background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
     color: var(--accent-yellow);
-    border-radius: 16px;
+    border-radius: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 26px;
+    font-size: 28px;
     margin: 0 auto 12px;
-    box-shadow: 0 6px 16px rgba(30, 58, 138, 0.22);
+    box-shadow: 0 8px 18px rgba(30, 58, 138, 0.25);
 }
 
 .brand-header h1 {
-    font-size: 23px;
+    font-size: 24px;
     color: var(--primary-blue);
     font-weight: 700;
 }
@@ -104,7 +104,7 @@ body {
     grid-template-columns: 1fr 1fr;
     background: var(--surface-light);
     padding: 4px;
-    border-radius: 10px;
+    border-radius: 12px;
     border: 1px solid var(--border-color);
     margin-bottom: 20px;
 }
@@ -113,7 +113,7 @@ body {
     border: none;
     background: transparent;
     padding: 9px;
-    border-radius: 8px;
+    border-radius: 9px;
     font-size: 14px;
     font-weight: 500;
     color: var(--text-muted);
@@ -125,6 +125,7 @@ body {
     background: var(--primary-blue);
     color: #FFFFFF;
     font-weight: 600;
+    box-shadow: 0 2px 6px rgba(30, 58, 138, 0.25);
 }
 
 .auth-form {
@@ -155,7 +156,7 @@ body {
     width: 100%;
     padding: 10px 14px;
     border: 1.5px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: 11px;
     font-size: 14px;
     background: var(--surface-white);
     color: var(--text-dark);
@@ -176,11 +177,15 @@ body {
     gap: 7px;
     padding: 10px 18px;
     border: none;
-    border-radius: 10px;
+    border-radius: 11px;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.18s;
+}
+
+.btn:hover:not(:disabled) {
+    transform: translateY(-1px);
 }
 
 .btn:disabled {
@@ -193,12 +198,13 @@ body {
 }
 
 .btn-primary {
-    background: var(--primary-blue);
+    background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
     color: #FFFFFF;
+    box-shadow: 0 4px 10px rgba(30, 58, 138, 0.18);
 }
 
 .btn-primary:hover:not(:disabled) {
-    background: var(--primary-blue-hover);
+    background: linear-gradient(135deg, #172554 0%, #1D4ED8 100%);
 }
 
 .btn-secondary {
@@ -220,6 +226,7 @@ body {
 .btn-outline:hover:not(:disabled) {
     border-color: var(--primary-blue);
     color: var(--primary-blue);
+    background: #EFF6FF;
 }
 
 .btn-outline-sm {
@@ -259,13 +266,13 @@ body {
    3. แถบนำทางด้านบน (Navbar)
    ========================================== */
 .navbar {
-    background: var(--primary-blue);
+    background: linear-gradient(90deg, #1E3A8A 0%, #1D4ED8 100%);
     color: #FFFFFF;
-    padding: 13px 24px;
+    padding: 13px 26px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+    box-shadow: 0 3px 14px rgba(15, 23, 42, 0.14);
     position: sticky;
     top: 0;
     z-index: 100;
@@ -279,8 +286,15 @@ body {
     font-size: 18px;
 }
 
-.nav-brand i {
+.nav-logo-pill {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
     color: var(--accent-yellow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .badge-role {
@@ -288,7 +302,7 @@ body {
     color: #FDE047;
     font-size: 12px;
     font-weight: 600;
-    padding: 2px 10px;
+    padding: 2px 11px;
     border-radius: 99px;
 }
 
@@ -300,13 +314,13 @@ body {
 }
 
 .navbar .btn-outline-sm {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.14);
     border-color: rgba(255, 255, 255, 0.25);
     color: #FFFFFF;
 }
 
 .navbar .btn-outline-sm:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.26);
     color: #FFFFFF;
 }
 
@@ -320,7 +334,7 @@ body {
 }
 
 #admin-dashboard.container {
-    max-width: 1280px;
+    max-width: 1300px;
 }
 
 .card-box {
@@ -381,7 +395,7 @@ body {
     grid-template-columns: 1.2fr 1fr;
     align-items: stretch;
     gap: 24px;
-    box-shadow: 0 12px 28px rgba(30, 58, 138, 0.2);
+    box-shadow: 0 12px 28px rgba(30, 58, 138, 0.22);
     position: relative;
     overflow: hidden;
 }
@@ -702,8 +716,8 @@ body {
 .sub-nav-btn {
     background: var(--surface-white);
     border: 1px solid var(--border-color);
-    padding: 9px 16px;
-    border-radius: 10px;
+    padding: 9px 15px;
+    border-radius: 11px;
     font-size: 13.5px;
     font-weight: 500;
     color: var(--text-dark);
@@ -717,13 +731,15 @@ body {
 .sub-nav-btn:hover {
     border-color: var(--primary-blue-light);
     color: var(--primary-blue);
+    background: #EFF6FF;
 }
 
 .sub-nav-btn.active {
     background: var(--primary-blue);
     border-color: var(--primary-blue);
     color: #FFFFFF;
-    box-shadow: 0 4px 10px rgba(30, 58, 138, 0.2);
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(30, 58, 138, 0.22);
 }
 
 #admin-dashboard .sub-nav {
@@ -731,8 +747,8 @@ body {
 }
 
 #admin-dashboard .sub-nav-btn {
-    padding: 8px 14px;
-    font-size: 13.5px;
+    padding: 8px 13px;
+    font-size: 13px;
     white-space: nowrap;
 }
 
@@ -793,7 +809,7 @@ body {
     gap: 12px;
     max-height: 460px;
     overflow-y: auto;
-    padding-right: 2px;
+    padding: 4px 2px;
 }
 
 .pos-menu-btn {
@@ -807,7 +823,7 @@ body {
     flex-direction: column;
     justify-content: space-between;
     gap: 8px;
-    min-height: 105px;
+    min-height: 108px;
     transition: transform 0.12s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
     position: relative;
 }
@@ -877,7 +893,7 @@ body {
     border-radius: 12px;
     padding: 10px;
     min-height: 160px;
-    max-height: 250px;
+    max-height: 245px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -1055,16 +1071,28 @@ body {
 }
 
 /* ==========================================
-   9. ใบเสร็จรับเงิน & สไตล์สั่งพิมพ์ (Receipt & Print CSS)
+   9. ใบเสร็จรับเงินอิเล็กทรอนิกส์ & สไตล์สั่งพิมพ์
    ========================================== */
 .receipt-paper {
     background: #FFFFFF;
-    border: 1.5px dashed #94A3B8;
+    border: 1px solid #CBD5E1;
+    border-top: 4px solid var(--primary-blue);
+    border-bottom: 3px dashed #94A3B8;
     border-radius: 10px;
-    padding: 18px 16px;
+    padding: 20px 16px;
     color: #0F172A;
     font-size: 13px;
-    line-height: 1.45;
+    line-height: 1.48;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.receipt-logo-img {
+    max-width: 78px;
+    max-height: 78px;
+    object-fit: contain;
+    margin: 0 auto 8px;
+    display: block;
+    border-radius: 8px;
 }
 
 .receipt-header {
@@ -1073,7 +1101,7 @@ body {
 }
 
 .receipt-header h4 {
-    font-size: 16px;
+    font-size: 16.5px;
     font-weight: 700;
     color: #0F172A;
     margin-bottom: 2px;
@@ -1127,7 +1155,7 @@ body {
 }
 
 .receipt-totals .rec-grand-total {
-    font-size: 16px;
+    font-size: 16.5px;
     font-weight: 700;
     margin-bottom: 6px;
 }
@@ -1179,6 +1207,7 @@ body {
 
     .receipt-paper {
         border: none !important;
+        box-shadow: none !important;
         padding: 0 !important;
     }
 
@@ -1458,7 +1487,7 @@ body {
 .image-dropzone {
     border: 2px dashed #CBD5E1;
     border-radius: 12px;
-    padding: 18px;
+    padding: 16px;
     text-align: center;
     background: var(--surface-light);
     cursor: pointer;
@@ -1472,7 +1501,7 @@ body {
 }
 
 .image-dropzone i {
-    font-size: 26px;
+    font-size: 24px;
     color: var(--primary-blue);
     margin-bottom: 6px;
 }
@@ -1503,8 +1532,8 @@ body {
 .modal {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.5);
-    backdrop-filter: blur(2px);
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(3px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1521,7 +1550,7 @@ body {
     padding: 24px;
     max-height: 92vh;
     overflow-y: auto;
-    box-shadow: 0 20px 35px rgba(15, 23, 42, 0.2);
+    box-shadow: 0 20px 35px rgba(15, 23, 42, 0.22);
 }
 
 .modal-header {
